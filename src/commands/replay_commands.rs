@@ -2,7 +2,7 @@ use poise::{CreateReply, serenity_prelude as serenity};
 use rosu_v2::prelude as rosu;
 use rosu_v2::prelude::BeatmapExtended;
 use crate::discord_helper::{ContextForFunctions, MessageState};
-use crate::embeds::single_text_response;
+use crate::embeds::{single_text_response, single_text_response_embed};
 use crate::{Context, Error, embeds};
 
 use crate::osu;
@@ -149,16 +149,16 @@ pub async fn render_and_upload (
         let score = match osu::get_osu_instance().score(unwrapped_score_id).await {
             Ok(score) => score,
             Err(_) => {
-                single_text_response(&ctx, &format!("Score with id {} does not exist", unwrapped_score_id), MessageState::WARN, false).await;
+                cff.edit(single_text_response_embed(&format!("Score with id {} does not exist", unwrapped_score_id), MessageState::WARN)).await?;
                 return Ok(());
             }
         };
         if !score.has_replay {
-            single_text_response(&ctx, "Score has no replay to download. Please provide the replay file", MessageState::WARN, false).await;
+            cff.edit(single_text_response_embed("Score has no replay to download. Please provide the replay file", MessageState::WARN)).await?;
             return Ok(());
         }
         if score.mode != rosu::GameMode::Osu {
-            single_text_response(&ctx, "Rendering a gamemode other than standard is currently not possible.", MessageState::WARN, false).await;
+            cff.edit(single_text_response_embed("Rendering a gamemode other than standard is currently not possible.", MessageState::WARN)).await?;
             return Ok(());
         }
         let replay = osu::get_osu_instance().replay_raw(score.id).await.unwrap();
@@ -173,12 +173,12 @@ pub async fn render_and_upload (
         let replay = match osu_db::Replay::from_bytes(&bytes) {
             Ok(replay) => replay,
             Err(_) => {
-                single_text_response(&ctx, "Replay could not be parsed", MessageState::ERROR, false).await;
+                cff.edit(single_text_response_embed("Replay could not be parsed", MessageState::ERROR)).await?;
                 return Ok(());
             },
         };
         if replay.mode != osu_db::Mode::Standard {
-            single_text_response(&ctx, "Rendering a gamemode other than standard is currently not possible.", MessageState::WARN, false).await;
+            cff.edit(single_text_response_embed("Rendering a gamemode other than standard is currently not possible.", MessageState::WARN)).await?;
             return Ok(());
         }
         let user = osu::get_osu_instance().user(replay.player_name.as_ref().expect("Expect a username")).await.expect("Player to exist");
@@ -186,7 +186,7 @@ pub async fn render_and_upload (
         let map: BeatmapExtended = match osu::get_beatmap_from_checksum(&replay.beatmap_hash).await {
             Some(map) => map,
             None => {
-                single_text_response(&ctx, "Cannot find map related to the replay", MessageState::WARN, false).await;
+                cff.edit(single_text_response_embed("Cannot find map related to the replay", MessageState::WARN)).await?;
                 return Ok(());
             },
         };

@@ -1,4 +1,3 @@
-use std::env;
 use std::fs::remove_file;
 
 use poise::CreateReply;
