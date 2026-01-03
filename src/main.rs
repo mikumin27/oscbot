@@ -22,7 +22,7 @@ async fn main() {
     osu::initialize_osu().await.unwrap();
     firebase::initialize_firebase().await.unwrap();
 
-    let token = std::env::var("OSU_BOT_DISCORD_TOKEN").expect("missing OSU_BOT_DISCORD_TOKEN");
+    let token = std::env::var("OSC_BOT_DISCORD_TOKEN").expect("missing OSC_BOT_DISCORD_TOKEN");
     let intents = serenity::GatewayIntents::all();
 
     let framework = poise::Framework::builder()

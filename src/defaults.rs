@@ -3,10 +3,10 @@ use poise::serenity_prelude as serenity;
 
 
 pub static REPLAY_ROLE: LazyLock<serenity::RoleId> = LazyLock::new(|| {
-    let id: u64 = std::env::var("OSU_BOT_REPLAY_ADMIN_ROLE")
-        .expect("OSU_BOT_REPLAY_ADMIN_ROLE not set")
+    let id: u64 = std::env::var("OSC_BOT_REPLAY_ADMIN_ROLE")
+        .expect("OSC_BOT_REPLAY_ADMIN_ROLE not set")
         .parse()
-        .expect("OSU_BOT_REPLAY_ADMIN_ROLE must be u64");
+        .expect("OSC_BOT_REPLAY_ADMIN_ROLE must be u64");
     serenity::RoleId::new(id)
 });
 

@@ -91,7 +91,7 @@ pub async fn test_danser_and_youtube (
 pub async fn regenerate_token(ctx: Context<'_>) -> Result<(), Error> {
     ctx.defer_ephemeral().await?;
     remove_file("token.json").ok();
-    youtube::upload(&format!("{}/videos/example.mp4", env::var("OSC_BOT_DANSER_PATH").unwrap()), "test".into(), "test".into(), vec![]).await?;
+    youtube::upload(&"/videoForRegen/random.mp4".into(), "test".into(), "test".into(), vec![]).await?;
     single_text_response(&ctx, "regenerated token!", MessageState::SUCCESS, true).await;
     Ok(())
 }
