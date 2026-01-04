@@ -25,12 +25,9 @@ pub async fn wait_open(path: &Path, timeout: Duration) -> std::io::Result<std::f
 // thank god for chatGPT
 pub async fn upload(video_path: &String, title: String, description: String, thumbnail: Vec<u8>) -> Result<String, Error> {
 
-    let token_path = std::env::var("OSC_BOT_YOUTUBE_TOKEN_PATH").unwrap_or_else(|_| "token.json".to_string());
-    if let Some(parent) = std::path::Path::new(&token_path).parent() {
-        if !parent.as_os_str().is_empty() {
-            tokio::fs::create_dir_all(parent).await.ok();
-        }
-    }
+    // Always persist OAuth tokens into the project working directory.
+    // This is intentionally not configurable to keep local + Docker behavior identical.
+    let token_path = "token.json";
 
     // Read OAuth client secret downloaded from Google Cloud Console
     let secret = yup_oauth2::read_application_secret("youtube_secret.json").await?;

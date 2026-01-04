@@ -97,8 +97,7 @@ pub async fn test_upload(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(slash_command)]
 pub async fn regenerate_token(ctx: Context<'_>) -> Result<(), Error> {
     ctx.defer_ephemeral().await?;
-    let token_path = std::env::var("OSC_BOT_YOUTUBE_TOKEN_PATH").unwrap_or_else(|_| "token.json".to_string());
-    remove_file(token_path).ok();
+    remove_file("token.json").ok();
     youtube::upload(&"videoForRegen/random.mp4".into(), "test".into(), "test".into(), vec![]).await?;
     single_text_response(&ctx, "regenerated token!", MessageState::SUCCESS, true).await;
     Ok(())
