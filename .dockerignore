@@ -1,10 +1,10 @@
-# Rust build outputs
-/target
+# Rust build artifacts
+target/
 
 # VCS
 .git
 
-# Local env / secrets (do not bake into image)
+# Local env / secrets
 .env
 .env.*
 token.json
@@ -14,8 +14,12 @@ youtube_secret.json
 .DS_Store
 *.swp
 *.swo
+.vscode
+.idea
+*.log
+tmp
 
-# Large runtime data (should be mounted as volumes)
+# Large runtime data (mounted as volumes)
 Songs
 Skins
 Replays

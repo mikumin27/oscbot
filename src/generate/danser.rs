@@ -167,8 +167,6 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
         return Ok(path);
     }
 
-    // Newer danser builds don't always print "Video is available at:".
-    // If rendering succeeded, fall back to picking the latest rendered mp4.
     let output_dir = format!("{}/videos", env::var("OSC_BOT_DANSER_PATH").unwrap());
     if exit_status.map(|s| s.success()).unwrap_or(false) {
         if let Some(path) = fallback_latest_rendered_video(&output_dir, started_at) {
