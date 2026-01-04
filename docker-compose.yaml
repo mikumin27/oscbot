@@ -1,0 +1,25 @@
+name: oscbot
+
+services:
+  oscbot:
+    image: ghcr.io/ibuergis/oscbot:${OSC_BOT_IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: oscbot
+    env_file:
+      - .env
+    privileged: true
+    environment:
+      OSC_BOT_DANSER_PATH: /app/danser
+      OSC_BOT_DANSER_CLI: /app/danser/danser-cli
+      RUST_BACKTRACE: "1"
+      NVIDIA_DRIVER_CAPABILITIES: all
+      NVIDIA_VISIBLE_DEVICES: all
+    volumes:
+      - ./volume/oscbot/Songs:/app/danser/Songs
+      - ./volume/oscbot/Skins:/app/danser/Skins
+      - ./volume/oscbot/Replays:/app/danser/Replays
+      - ./volume/oscbot/videos:/app/danser/videos
+      - ./videoForRegen:/app/oscbot/videoForRegen
+      - ./token.json:/app/oscbot/token.json
+      - ./youtube_secret.json:/app/oscbot/youtube_secret.json:ro
+    restart: unless-stopped
