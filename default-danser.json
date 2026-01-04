@@ -668,7 +668,7 @@
     "Container": "mp4",
     "ShowFFmpegLogs": true,
     "MotionBlur": {
-      "Enabled": true,
+      "Enabled": false,
       "OversampleMultiplier": 4,
       "BlendFrames": 6,
       "BlendFunctionID": 27,
