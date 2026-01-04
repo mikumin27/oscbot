@@ -25,6 +25,13 @@ pub async fn wait_open(path: &Path, timeout: Duration) -> std::io::Result<std::f
 // thank god for chatGPT
 pub async fn upload(video_path: &String, title: String, description: String, thumbnail: Vec<u8>) -> Result<String, Error> {
 
+    let token_path = std::env::var("OSC_BOT_YOUTUBE_TOKEN_PATH").unwrap_or_else(|_| "token.json".to_string());
+    if let Some(parent) = std::path::Path::new(&token_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            tokio::fs::create_dir_all(parent).await.ok();
+        }
+    }
+
     // Read OAuth client secret downloaded from Google Cloud Console
     let secret = yup_oauth2::read_application_secret("youtube_secret.json").await?;
 
@@ -33,7 +40,7 @@ pub async fn upload(video_path: &String, title: String, description: String, thu
         secret,
         yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
     )
-    .persist_tokens_to_disk("token.json")
+    .persist_tokens_to_disk(token_path)
     .build()
     .await?;
 
@@ -82,15 +89,20 @@ pub async fn upload(video_path: &String, title: String, description: String, thu
         .await?;
 
     println!("Uploaded! id={:?}", uploaded_video.id);
+    let video_id = uploaded_video.id.unwrap();
+
+    if thumbnail.is_empty() {
+        println!("No thumbnail bytes provided; skipping thumbnail set.");
+        return Ok(video_id);
+    }
 
     let thumb_mime = "image/png".parse().unwrap(); // or "image/jpeg"
 
-    let video_id = uploaded_video.id.unwrap();
     // set thumbnail
     let (_resp, thumb_resp) = hub
         .thumbnails()
         .set(&video_id)
-        .add_scope(youtube::api::Scope::Upload) // scopes allowed include youtube.upload/youtube/youtube.force-ssl/... :contentReference[oaicite:1]{index=1}
+        .add_scope(youtube::api::Scope::Upload)
         .upload(Cursor::new(thumbnail), thumb_mime)
         .await?;
 
