@@ -90,7 +90,7 @@ pub async fn test_danser_and_youtube (
 pub async fn test_upload(ctx: Context<'_>) -> Result<(), Error> {
     ctx.defer_ephemeral().await?;
     youtube::upload(&"videoForRegen/random.mp4".into(), "test".into(), "test".into(), vec![]).await?;
-    single_text_response(&ctx, "regenerated token!", MessageState::SUCCESS, true).await;
+    single_text_response(&ctx, "video has been uploaded!", MessageState::SUCCESS, true).await;
     Ok(())
 }
 

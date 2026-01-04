@@ -213,6 +213,22 @@ pub async fn attach_replay(beatmap_hash: &String, replay_reference: &String, byt
     Ok(())
 }
 
+pub async fn get_replay(replay_reference: &String, beatmap_hash: &String) -> Result<osu_db::Replay, Error> {
+    let replay_path = &format!("{}/Replays/{}/{}.osr", env::var("OSC_BOT_DANSER_PATH").unwrap(), beatmap_hash, replay_reference);
+    let replay = osu_db::Replay::from_file(replay_path).unwrap();
+    Ok(replay)
+}
+
+pub async fn get_replay_file(replay_reference: &String, beatmap_hash: &String) -> Result<File, Error> {
+    let replay_path = &format!("{}/Replays/{}/{}.osr", env::var("OSC_BOT_DANSER_PATH").unwrap(), beatmap_hash, replay_reference);
+    if !Path::new(replay_path).is_dir() {
+        create_dir(&replay_path).await?;
+    }
+
+    let file = File::open(replay_path).await?;
+    Ok(file)
+}
+
 pub async fn cleanup_files(beatmap_hash: &String, replay_reference: &String, video_path: &String) {
     let replay_path = &format!("{}/Replays/{}/{}.osr", env::var("OSC_BOT_DANSER_PATH").unwrap(), beatmap_hash, replay_reference);
     _ = remove_file(replay_path);

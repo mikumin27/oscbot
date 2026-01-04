@@ -1,6 +1,6 @@
 use std::vec;
 
-use poise::serenity_prelude::{self as serenity, CreateAttachment, CreateButton, CreateMessage};
+use poise::serenity_prelude::{self as serenity, CreateButton, CreateEmbed, ReactionType};
 use rosu_v2::prelude as rosu;
 use crate::{Context, Error, defaults, discord_helper::MessageState, embeds, firebase, osu};
 
@@ -15,7 +15,10 @@ pub async fn score(
     #[description = "score file"] scorefile: Option<serenity::Attachment>,
     #[description = "reason"] reason: Option<String>,
 ) -> Result<(), Error> {
-    let suggestion: CreateMessage;
+    let embed: CreateEmbed;
+    let mode: rosu::GameMode;
+    let parameters: String;
+    let requesting_user: u64 = ctx.author().id.into();
     ctx.defer().await?;
     if scoreid.is_some() {
         let unwrapped_score_id = scoreid.unwrap();
@@ -35,32 +38,11 @@ pub async fn score(
             embeds::single_text_response(&ctx, "Score has no replay to download. Please provide the replay file", MessageState::ERROR, false).await;
             return Ok(());
         }
-        let mut buttons: Vec<CreateButton> = vec![];
-        let render_replay_id = format!("thumbnail:{}", score.id);
-        let render_replay_button = serenity::CreateButton::new(render_replay_id)
-            .label("Render Thumbnail")
-            .emoji(crate::emojis::SATA_ANDAGI)
-            .style(serenity::ButtonStyle::Primary);
 
-        buttons.push(render_replay_button);
-
-        if score.mode == rosu::GameMode::Osu {
-            let upload_score_id = format!("upload:{}", score.id);
-            let upload_score_button = serenity::CreateButton::new(upload_score_id)
-            .label("Upload to youtube")
-            .emoji(crate::emojis::SATA_ANDAGI)
-            .style(serenity::ButtonStyle::Primary);
-            buttons.push(upload_score_button);
-        }
         let map = osu::get_osu_instance().beatmap().map_id(score.map_id).await.expect("Beatmap exists");
-        let embed = embeds::score_embed_from_score(&score, &map, reason).await?;
-
-
-        suggestion = serenity::CreateMessage::new()
-            .embed(embed.footer(serenity::CreateEmbedFooter::new(format!("Requested by @{}", ctx.author().name))))
-            .components(vec![serenity::CreateActionRow::Buttons(buttons)]);
-
-            
+        embed = embeds::score_embed_from_score(&score, &map, reason).await?;
+        mode = score.mode;
+        parameters = format!("{}:{}:{}:{}", "scoreid".to_string(), score.id.to_string(), map.map_id, requesting_user);
         firebase::score::insert_score(&unwrapped_score_id.to_string()).await;
 
     }
@@ -86,11 +68,9 @@ pub async fn score(
                 return Ok(());
             },
         };
-        let embed = embeds::score_embed_from_replay_file(&replay, &map, reason).await?;
-        suggestion = serenity::CreateMessage::new()
-            .embed(embed.footer(serenity::CreateEmbedFooter::new(format!("Requested by @{}", ctx.author().name))))
-            .add_file(CreateAttachment::bytes(bytes, "replay.osr"));
-
+        embed = embeds::score_embed_from_replay_file(&replay, &map, reason).await?;
+        mode = rosu::GameMode::from(replay.mode.raw());
+        parameters = format!("{}:{}:{}:{}", "replayfile".to_string(), replay_checksum.clone(), map.map_id, requesting_user);
         firebase::score::insert_score(replay_checksum).await;
     }
     else {
@@ -98,6 +78,35 @@ pub async fn score(
         return Ok(());
     }
 
+    let mut buttons: Vec<CreateButton> = vec![];
+        let decline_id = format!("decline:{}", parameters);
+        let decline_button = serenity::CreateButton::new(decline_id)
+            .label("Decline")
+            .emoji(ReactionType::Unicode("❌".to_string()))
+            .style(serenity::ButtonStyle::Danger);
+
+        buttons.push(decline_button);
+
+        if mode == rosu::GameMode::Osu {
+            let approve_id = format!("approve_with_upload:{}", parameters);
+            let approve_button = serenity::CreateButton::new(approve_id)
+            .label("Approve with upload")
+            .emoji(ReactionType::Unicode("✅".to_string()))
+            .style(serenity::ButtonStyle::Success);
+            buttons.push(approve_button);
+        }
+        else {
+            let approve_id = format!("approve_no_upload:{}", parameters);
+            let approve_button = serenity::CreateButton::new(approve_id)
+            .label("Approve without upload")
+            .emoji(ReactionType::Unicode("✅".to_string()))
+            .style(serenity::ButtonStyle::Success);
+            buttons.push(approve_button);
+        }
+
+    let suggestion = serenity::CreateMessage::new()
+            .embed(embed.footer(serenity::CreateEmbedFooter::new(format!("Requested by @{}", ctx.author().name))))
+            .components(vec![serenity::CreateActionRow::Buttons(buttons)]);
     defaults::SUGGESTIONS_CHANNEL.send_message(ctx, suggestion).await?;
     embeds::single_text_response(&ctx, "Score has been requested!", MessageState::INFO, false).await;
     Ok(())

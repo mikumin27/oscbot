@@ -141,3 +141,31 @@ pub fn upload_result_embed (
     }
     Ok(embed)
 }
+
+pub fn suggestion_approved_embed (
+    title: &String,
+) -> Result<serenity::CreateEmbed, Error> {
+    let mut embed = serenity::CreateEmbed::default();
+    let author = serenity::CreateEmbedAuthor::new("Suggestion");
+
+    embed = embed.author(author)
+            .color(get_embed_color(&MessageState::SUCCESS))
+            .title("✅ Your suggestion has been approved!")
+            .description(format!("Score: {}", title));
+
+    Ok(embed)
+}
+
+pub fn suggestion_declined_embed (
+    title: &String,
+) -> Result<serenity::CreateEmbed, Error> {
+    let mut embed = serenity::CreateEmbed::default();
+    let author = serenity::CreateEmbedAuthor::new("Suggestion");
+
+    embed = embed.author(author)
+            .color(get_embed_color(&MessageState::SUCCESS))
+            .title("❌ Your suggestion has been declined!")
+            .description(format!("Score: {}", title));
+
+    Ok(embed)
+}
