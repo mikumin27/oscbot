@@ -149,11 +149,9 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
 
                 if line.contains("Progress") {
                     if let Some((_, rest)) = line.split_once("Progress: ") {
-                        if let Some((pct, _)) = rest.split_once(",") {
-                            cff.edit(
-                                embeds::render_and_upload_embed(title, true, Some(pct.to_string()), false)?
-                            ).await?;
-                        }
+                        cff.edit(
+                            embeds::render_and_upload_embed(title, true, Some(rest.to_string()), false)?
+                        ).await?;
                     }
                 }
 

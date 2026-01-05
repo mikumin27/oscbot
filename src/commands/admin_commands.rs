@@ -1,11 +1,20 @@
 use poise::{CreateReply, serenity_prelude::{self as serenity, CreateEmbed, Mentionable}};
 
-use crate::{Context, Error, discord_helper::MessageState, embeds::single_text_response, firebase};
+use crate::{Context, Error, discord_helper::{MessageState, user_has_replay_role}, embeds::single_text_response, firebase};
 
-#[poise::command(slash_command, rename = "admin", subcommands("blacklist"))]
+async fn has_replay_role(ctx: Context<'_>) -> Result<bool, Error> {
+    if !user_has_replay_role(ctx, ctx.author()).await.unwrap() {
+        single_text_response(&ctx, "No permission L", MessageState::INFO, true).await;
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+
+#[poise::command(slash_command, rename = "admin", subcommands("blacklist"), check="has_replay_role")]
 pub async fn bundle(_ctx: Context<'_>, _arg: String) -> Result<(), Error> { Ok(()) }
 
-#[poise::command(slash_command, rename = "admin", subcommands("add", "remove", "list"))]
+#[poise::command(slash_command, subcommands("add", "remove", "list"))]
 pub async fn blacklist(_ctx: Context<'_>, _arg: String) -> Result<(), Error> { Ok(()) }
 
 #[poise::command(slash_command)]

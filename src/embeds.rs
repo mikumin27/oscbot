@@ -98,12 +98,12 @@ pub fn render_and_upload_embed(
     let mut replay_rendered: bool = false;
     let render_replay_string: String = match render_replay {
         Some(string) => {
-            match string.as_str() {
-                "100%" => {
-                    replay_rendered = true;
-                    "done".to_string()
-                }
-                _ => string
+            if string.contains("100%") {
+                replay_rendered = true;
+                "done".to_string()
+            }
+            else {
+                string
             }
         },
         None => if preparation_finished { "0%".into() } else { "awaiting".into() }
