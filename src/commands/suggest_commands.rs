@@ -79,30 +79,30 @@ pub async fn score(
     }
 
     let mut buttons: Vec<CreateButton> = vec![];
-        let decline_id = format!("decline:{}", parameters);
-        let decline_button = serenity::CreateButton::new(decline_id)
-            .label("Decline")
-            .emoji(ReactionType::Unicode("❌".to_string()))
-            .style(serenity::ButtonStyle::Danger);
+    if mode == rosu::GameMode::Osu {
+        let approve_id = format!("approveWithUpload:{}", parameters);
+        let approve_button = serenity::CreateButton::new(approve_id)
+        .label("Approve with upload")
+        .emoji(ReactionType::Unicode("✅".to_string()))
+        .style(serenity::ButtonStyle::Success);
+        buttons.push(approve_button);
+    }
+    else {
+        let approve_id = format!("approveNoUpload:{}", parameters);
+        let approve_button = serenity::CreateButton::new(approve_id)
+        .label("Approve without upload")
+        .emoji(ReactionType::Unicode("✅".to_string()))
+        .style(serenity::ButtonStyle::Success);
+        buttons.push(approve_button);
+    }
 
-        buttons.push(decline_button);
+    let decline_id = format!("decline:{}", parameters);
+    let decline_button = serenity::CreateButton::new(decline_id)
+        .label("Decline")
+        .emoji(ReactionType::Unicode("💀".to_string()))
+        .style(serenity::ButtonStyle::Danger);
 
-        if mode == rosu::GameMode::Osu {
-            let approve_id = format!("approve_with_upload:{}", parameters);
-            let approve_button = serenity::CreateButton::new(approve_id)
-            .label("Approve with upload")
-            .emoji(ReactionType::Unicode("✅".to_string()))
-            .style(serenity::ButtonStyle::Success);
-            buttons.push(approve_button);
-        }
-        else {
-            let approve_id = format!("approve_no_upload:{}", parameters);
-            let approve_button = serenity::CreateButton::new(approve_id)
-            .label("Approve without upload")
-            .emoji(ReactionType::Unicode("✅".to_string()))
-            .style(serenity::ButtonStyle::Success);
-            buttons.push(approve_button);
-        }
+    buttons.push(decline_button);
 
     let suggestion = serenity::CreateMessage::new()
             .embed(embed.footer(serenity::CreateEmbedFooter::new(format!("Requested by @{}", ctx.author().name))))
