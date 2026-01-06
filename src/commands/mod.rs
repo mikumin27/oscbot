@@ -7,19 +7,15 @@ mod skin_commands;
 mod admin_commands;
 
 pub fn slash_commands_bundle() -> Vec<poise::Command<Data, Error>> {
+
+    let mut commands_bundle = vec![
+            replay_commands::bundle(),
+            suggest_commands::bundle(),
+            skin_commands::bundle(),
+            admin_commands::bundle(),
+    ];
     if cfg!(debug_assertions) {
-        return vec![
-            dev_commands::bundle(),
-            replay_commands::bundle(),
-            suggest_commands::bundle(),
-            skin_commands::bundle(),
-            admin_commands::bundle(),
-    ]
+        commands_bundle.push(dev_commands::bundle());
     }
-    return vec![
-            replay_commands::bundle(),
-            suggest_commands::bundle(),
-            skin_commands::bundle(),
-            admin_commands::bundle(),
-    ]
+    commands_bundle
 }
