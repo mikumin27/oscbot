@@ -9,7 +9,6 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -35,28 +34,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build (debug) -> :dev
+      - name: Docker build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          build-args: |
-            BUILD_PROFILE=debug
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
+            ${{ env.REGISTRY }}/${{ github.repository }}:latest
           cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build (release) -> :latest
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          build-args: |
-            BUILD_PROFILE=release
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=ma
