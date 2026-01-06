@@ -1,25 +1,27 @@
-name: oscbot
-
 services:
   oscbot:
-    image: ghcr.io/ibuergis/oscbot:${OSC_BOT_IMAGE_TAG:-latest}
-    pull_policy: always
+    image: ghcr.io/ibuergis/oscbot:latest
     container_name: oscbot
+    user: "1000:1000"
+    volumes:
+      - ./danser/Songs:/app/danser/Songs
+      - ./danser/Skins:/app/danser/Skins
+      - ./danser/Replays:/app/danser/Replays
+      - ./danser/videos:/app/danser/videos
+      - ./token.json:/app/oscbot/token.json
+      - ./youtube_secret.json:/app/oscbot/youtube_secret.json
+      - ./credentials.json:/app/danser/settings/credentials.json
     env_file:
       - .env
-    privileged: true
-    environment:
-      OSC_BOT_DANSER_PATH: /app/danser
-      OSC_BOT_DANSER_CLI: /app/danser/danser-cli
-      RUST_BACKTRACE: "1"
-      NVIDIA_DRIVER_CAPABILITIES: all
-      NVIDIA_VISIBLE_DEVICES: all
-    volumes:
-      - ./volume/Songs:/app/danser/Songs
-      - ./volume/Skins:/app/danser/Skins
-      - ./volume/Replays:/app/danser/Replays
-      - ./volume/videos:/app/danser/videos
-      - ./videoForRegen:/app/oscbot/videoForRegen
-      - ./token.json:/app/oscbot/token.json
-      - ./youtube_secret.json:/app/oscbot/youtube_secret.json:ro
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu
+                - compute
+                - video
+                - graphics
