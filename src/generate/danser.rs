@@ -135,7 +135,7 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
 
                 if stream_logs {
                     if stream == "stderr" {
-                        tracing::error!(stream = stream, line = line, "Danser has failed");
+                        tracing::info!("[danser {stream}] {line}");
                     } else {
                         tracing::debug!("[danser {stream}] {line}");
                     }
