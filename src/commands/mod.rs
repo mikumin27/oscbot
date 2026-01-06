@@ -19,6 +19,7 @@ pub fn slash_commands_bundle() -> Vec<poise::Command<Data, Error>> {
     return vec![
             replay_commands::bundle(),
             suggest_commands::bundle(),
+            skin_commands::bundle(),
             admin_commands::bundle(),
     ]
 }
