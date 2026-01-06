@@ -36,12 +36,14 @@ impl ScoreMapping {
 }
 
 pub async fn handle_click(ctx: &serenity::Context, component: &ComponentInteraction) -> Result<(), Error> {
+    tracing::info!(identifier = component.data.custom_id, "Interaction has been initiated");
     let mut parts: std::str::Split<'_, char> = component.data.custom_id.split(':');
 
     let identifier = parts.next().unwrap();
     let data: Vec<&str> = parts.collect();
 
     if !user_has_replay_role(ctx, &component.user).await.unwrap() {
+        tracing::warn!(user = component.user.display_name(), "User tried to use interaction without permission");
         _ = component.create_response(ctx, 
             serenity::CreateInteractionResponse::Message(
                 CreateInteractionResponseMessage::default().embed(
@@ -61,10 +63,9 @@ pub async fn handle_click(ctx: &serenity::Context, component: &ComponentInteract
                 ScoreType::ScoreId => upload_score_by_score(ctx, component, &score).await.unwrap(),
                 ScoreType::ReplayFile => upload_score_by_replay(ctx, component, &score).await.unwrap(),
             };
-            if title.is_some() {
-                score.requesting_user.dm(ctx, CreateMessage::default().add_embed(embeds::suggestion_approved_embed(&title.unwrap())?)).await?;
-                message.edit(ctx, EditMessage::default().components(vec![])).await?;
-            }
+            score.requesting_user.dm(ctx, CreateMessage::default().add_embed(embeds::suggestion_approved_embed(&title)?)).await?;
+            message.edit(ctx, EditMessage::default().components(vec![])).await?;
+            
         },
         "approveNoUpload" => {
             component.create_response(ctx, CreateInteractionResponse::Message(CreateInteractionResponseMessage::default().content("Loading content..."))).await?;
@@ -73,10 +74,9 @@ pub async fn handle_click(ctx: &serenity::Context, component: &ComponentInteract
                 ScoreType::ScoreId => get_score_metadata_by_score(ctx, component, &score).await.unwrap(),
                 ScoreType::ReplayFile => get_score_metadata_by_replay(ctx, component, &score).await.unwrap(),
             };
-            if title.is_some() {
-                score.requesting_user.dm(ctx, CreateMessage::default().add_embed(embeds::suggestion_approved_embed(&title.unwrap())?)).await?;
-                message.edit(ctx, EditMessage::default().components(vec![])).await?;
-            }
+            score.requesting_user.dm(ctx, CreateMessage::default().add_embed(embeds::suggestion_approved_embed(&title)?)).await?;
+            message.edit(ctx, EditMessage::default().components(vec![])).await?;
+            
         },
         "decline" => {
             let score = ScoreMapping::new(ctx, data.try_into().expect("Data must have 3 values")).await;
@@ -99,7 +99,7 @@ pub async fn handle_click(ctx: &serenity::Context, component: &ComponentInteract
     Ok(())
 }
 
-async fn upload_score_by_replay(ctx: &serenity::Context, component: &serenity::ComponentInteraction, score: &ScoreMapping) -> Result<Option<String>, Error> {
+async fn upload_score_by_replay(ctx: &serenity::Context, component: &serenity::ComponentInteraction, score: &ScoreMapping) -> Result<String, Error> {
     let mut cff = ContextForFunctions {
         command_context: None,
         reply: None,
@@ -108,18 +108,17 @@ async fn upload_score_by_replay(ctx: &serenity::Context, component: &serenity::C
     };
 
     let beatmap_hash = score.map.checksum.as_ref().unwrap();
-    let replay = danser::get_replay(&score.reference, &beatmap_hash).await?;
+    let replay = danser::get_replay(&score.reference, &beatmap_hash).await.unwrap();
 
-    let user = osu::get_osu_instance().user(replay.player_name.as_ref().unwrap()).await?;
-    let map = osu::get_osu_instance().beatmap().checksum(replay.replay_hash.as_ref().unwrap()).await?;
+    let user = osu::get_osu_instance().user(replay.player_name.as_ref().unwrap()).await.unwrap();
 
-    let title = youtube_text::generate_title_with_replay(&replay, &map).await;
+    let title = youtube_text::generate_title_with_replay(&replay, &score.map).await;
     cff.send(embeds::render_and_upload_embed(&"...".to_string(), false, None, false)?).await?;
-    upload::render_and_upload_by_replay(&cff, replay, map,  user,None).await?;
-    Ok(Some(title))
+    upload::render_and_upload_by_replay(&cff, replay, score.map.clone(),  user,None).await?;
+    Ok(title)
 }
 
-async fn upload_score_by_score(ctx: &serenity::Context, component: &serenity::ComponentInteraction, score: &ScoreMapping) -> Result<Option<String>, Error> {
+async fn upload_score_by_score(ctx: &serenity::Context, component: &serenity::ComponentInteraction, score: &ScoreMapping) -> Result<String, Error> {
     let mut cff = ContextForFunctions {
         command_context: None,
         reply: None,
@@ -135,10 +134,10 @@ async fn upload_score_by_score(ctx: &serenity::Context, component: &serenity::Co
     let title = youtube_text::generate_title_with_score(&score, &map).await;
     danser::attach_replay(&map.checksum.as_ref().unwrap(), &score_id.to_string(), &replay_bytes).await?;
     upload::render_and_upload_by_score(&cff, score, map, None).await?;
-    Ok(Some(title))
+    Ok(title)
 }
 
-async fn get_score_metadata_by_replay(ctx: &serenity::Context, component: &serenity::ComponentInteraction, score: &ScoreMapping) -> Result<Option<String>, Error> {
+async fn get_score_metadata_by_replay(ctx: &serenity::Context, component: &serenity::ComponentInteraction, score: &ScoreMapping) -> Result<String, Error> {
     let beatmap_hash = score.map.checksum.as_ref().unwrap();
     let replay = danser::get_replay(&score.reference, &beatmap_hash).await?;
     
@@ -158,10 +157,10 @@ async fn get_score_metadata_by_replay(ctx: &serenity::Context, component: &seren
             .add(CreateAttachment::bytes(thumbnail, "thumbnail.jpeg"))
         )
     ).await?;
-    Ok(Some(title))
+    Ok(title)
 }
 
-async fn get_score_metadata_by_score(ctx: &serenity::Context, component: &serenity::ComponentInteraction, score: &ScoreMapping) -> Result<Option<String>, Error> {    
+async fn get_score_metadata_by_score(ctx: &serenity::Context, component: &serenity::ComponentInteraction, score: &ScoreMapping) -> Result<String, Error> {    
     let map = score.map.clone();
     let score_id: u64 = score.reference.parse().unwrap();
     let score = osu::get_osu_instance().score(score_id).await.expect("Score must exist");
@@ -179,5 +178,5 @@ async fn get_score_metadata_by_score(ctx: &serenity::Context, component: &sereni
             .add(CreateAttachment::bytes(thumbnail, "thumbnail.jpeg"))
         )
     ).await?;
-    Ok(Some(title))
+    Ok(title)
 }

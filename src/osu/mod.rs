@@ -17,7 +17,7 @@ pub async fn initialize_osu() -> Result<(), Error> {
 
     match OSU.set(rosu::Osu::new(client_id, client_secret).await.unwrap()) {
         Ok(_) => return Ok(()),
-        Err(_) => panic!("osu client could not be initialized"),
+        Err(_) => {panic!("osu client could not be initialized")},
     };
 }
 

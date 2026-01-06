@@ -5,6 +5,7 @@ use std::env;
 use std::path::Path;
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime};
+use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use std::io::Write;
 use tokio::process::Command;
@@ -150,7 +151,8 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
                 if line.contains("Progress") {
                     if let Some((_, rest)) = line.split_once("Progress: ") {
                         cff.edit(
-                            embeds::render_and_upload_embed(title, true, Some(rest.to_string()), false)?
+                            embeds::render_and_upload_embed(title, true, Some(rest.to_string()), false)?,
+                            vec![]
                         ).await?;
                     }
                 }
@@ -218,12 +220,16 @@ pub async fn get_replay(replay_reference: &String, beatmap_hash: &String) -> Res
 
 pub async fn get_replay_file(replay_reference: &String, beatmap_hash: &String) -> Result<File, Error> {
     let replay_path = &format!("{}/Replays/{}/{}.osr", env::var("OSC_BOT_DANSER_PATH").unwrap(), beatmap_hash, replay_reference);
-    if !Path::new(replay_path).is_dir() {
-        create_dir(&replay_path).await?;
-    }
 
     let file = File::open(replay_path).await?;
     Ok(file)
+}
+
+pub async fn get_replay_bytes(replay_reference: &String, beatmap_hash: &String) -> Result<Vec<u8>, Error> {
+    let replay_path = &format!("{}/Replays/{}/{}.osr", env::var("OSC_BOT_DANSER_PATH").unwrap(), beatmap_hash, replay_reference);
+    
+    let bytes = fs::read(replay_path).await?;
+    Ok(bytes)
 }
 
 pub async fn cleanup_files(beatmap_hash: &String, replay_reference: &String, video_path: &String) {

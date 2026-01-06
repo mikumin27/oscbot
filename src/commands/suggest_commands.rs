@@ -2,7 +2,7 @@ use std::vec;
 
 use poise::serenity_prelude::{self as serenity, CreateButton, CreateEmbed, ReactionType};
 use rosu_v2::prelude as rosu;
-use crate::{Context, Error, defaults, discord_helper::MessageState, embeds, firebase, osu};
+use crate::{Context, Error, defaults, discord_helper::MessageState, embeds, firebase, generate::danser, osu};
 
 #[poise::command(slash_command, rename = "suggest", subcommands("score"), required_permissions = "SEND_MESSAGES")]
 pub async fn bundle(_ctx: Context<'_>, _arg: String) -> Result<(), Error> { Ok(()) }
@@ -68,6 +68,7 @@ pub async fn score(
                 return Ok(());
             },
         };
+        danser::attach_replay(&map.checksum.as_ref().unwrap(), replay_checksum, &bytes).await.unwrap();
         embed = embeds::score_embed_from_replay_file(&replay, &map, reason).await?;
         mode = rosu::GameMode::from(replay.mode.raw());
         parameters = format!("{}:{}:{}:{}", "replayfile".to_string(), replay_checksum.clone(), map.map_id, requesting_user);

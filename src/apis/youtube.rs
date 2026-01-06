@@ -85,25 +85,25 @@ pub async fn upload(video_path: &String, title: String, description: String, thu
         .upload_resumable(file, mime)
         .await?;
 
-    println!("Uploaded! id={:?}", uploaded_video.id);
+    tracing::info!(video_id = uploaded_video.id, "Video has been uploaded");
     let video_id = uploaded_video.id.unwrap();
 
     if thumbnail.is_empty() {
-        println!("No thumbnail bytes provided; skipping thumbnail set.");
+        tracing::info!("No thumbnail bytes provided; skipping thumbnail set");
         return Ok(video_id);
     }
 
     let thumb_mime = "image/png".parse().unwrap(); // or "image/jpeg"
 
     // set thumbnail
-    let (_resp, thumb_resp) = hub
+    hub
         .thumbnails()
         .set(&video_id)
         .add_scope(youtube::api::Scope::Upload)
         .upload(Cursor::new(thumbnail), thumb_mime)
         .await?;
 
-    println!("Thumbnail set! items={:?}", thumb_resp.items);
+    tracing::info!("Thumbnail has been set!");
 
     Ok(video_id)
 }
