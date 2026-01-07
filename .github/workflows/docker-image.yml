@@ -38,8 +38,8 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker build (no cache)
+      
+      - name: Docker build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -47,4 +47,5 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}:latest
-          no-cache: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
