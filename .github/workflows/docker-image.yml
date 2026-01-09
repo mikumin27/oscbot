@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - "**"
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - default-danser.json
+      - src/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/docker-image.yml
   workflow_dispatch:
 
 concurrency:
