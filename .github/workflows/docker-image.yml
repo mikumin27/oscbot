@@ -26,7 +26,9 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  CACHE_REF: ghcr.io/${{ github.repository }}:buildcache
+  CACHE_REF_SHARED: ghcr.io/${{ github.repository }}:buildcache-shared
+  CACHE_REF_MAIN_RELEASE: ghcr.io/${{ github.repository }}:buildcache-main-release
+  CACHE_REF_MAIN_DEBUG: ghcr.io/${{ github.repository }}:buildcache-main-debug
 
 jobs:
   build:
@@ -65,43 +67,50 @@ jobs:
           BRANCH_TAG="$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
           if [ -z "$BRANCH_TAG" ]; then BRANCH_TAG="branch"; fi
 
+          echo "branch_tag=${BRANCH_TAG}" >> "$GITHUB_OUTPUT"
+          echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          echo "cache_ref_branch=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${BRANCH_TAG}" >> "$GITHUB_OUTPUT"
+          echo "cache_scope_branch=branch-${BRANCH_TAG}" >> "$GITHUB_OUTPUT"
+
           if [ "$REF_NAME" = "main" ]; then
             echo "profile=release" >> "$GITHUB_OUTPUT"
+
             echo "build_args<<EOF" >> "$GITHUB_OUTPUT"
             echo "OSCBOT_PROFILE=release" >> "$GITHUB_OUTPUT"
             echo "OSCBOT_LTO=thin" >> "$GITHUB_OUTPUT"
             echo "OSCBOT_CODEGEN_UNITS=16" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
+
             echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-          
+
             echo "dev_build_args<<EOF" >> "$GITHUB_OUTPUT"
             echo "OSCBOT_PROFILE=debug" >> "$GITHUB_OUTPUT"
             echo "OSCBOT_INCREMENTAL=1" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
+
             echo "dev_tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           else
             echo "profile=debug" >> "$GITHUB_OUTPUT"
+
             echo "build_args<<EOF" >> "$GITHUB_OUTPUT"
             echo "OSCBOT_PROFILE=debug" >> "$GITHUB_OUTPUT"
             echo "OSCBOT_INCREMENTAL=1" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
+
             echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${BRANCH_TAG},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${BRANCH_TAG}-sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           fi
-
-          echo "branch_tag=${BRANCH_TAG}" >> "$GITHUB_OUTPUT"
-          echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
 
       - name: Ensure cache dir exists
         run: mkdir -p cache-mounts
 
-      - name: Cache BuildKit cache mounts
+      - name: Cache BuildKit cache mounts (buildkit-cache-dance backing store)
         id: cache-mounts
         uses: actions/cache@v4
         with:
           path: cache-mounts
-          key: cache-mounts-${{ runner.os }}-${{ hashFiles('Dockerfile') }}
+          key: cache-mounts-v2-${{ runner.os }}-${{ hashFiles('Dockerfile', 'Cargo.lock', 'Cargo.toml', '.github/workflows/docker-image.yml') }}
           restore-keys: |
-            cache-mounts-${{ runner.os }}-
+            cache-mounts-v2-${{ runner.os }}-
 
       - name: Restore Docker cache mounts
         uses: reproducible-containers/buildkit-cache-dance@v3
@@ -111,13 +120,21 @@ jobs:
           dockerfile: Dockerfile
           cache-map: |
             {
-              "var-cache-apt": "/var/cache/apt",
-              "var-lib-apt-lists": "/var/lib/apt/lists",
-              "go-build": "/root/.cache/go-build",
-              "go-mod": "/go/pkg/mod",
-              "cargo-registry": "/usr/local/cargo/registry",
-              "cargo-git": "/usr/local/cargo/git",
-              "cargo-target": "/app/target"
+              "apt-cache-danser": { "target": "/var/cache/apt", "id": "apt-cache-danser" },
+              "apt-lists-danser": { "target": "/var/lib/apt/lists", "id": "apt-lists-danser" },
+
+              "go-build": { "target": "/root/.cache/go-build", "id": "go-build" },
+              "go-mod":   { "target": "/go/pkg/mod", "id": "go-mod" },
+
+              "apt-cache-rust": { "target": "/var/cache/apt", "id": "apt-cache-rust" },
+              "apt-lists-rust": { "target": "/var/lib/apt/lists", "id": "apt-lists-rust" },
+
+              "cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
+              "cargo-git":      { "target": "/usr/local/cargo/git", "id": "cargo-git" },
+              "cargo-target":   { "target": "/app/target", "id": "cargo-target" },
+
+              "apt-cache-final": { "target": "/var/cache/apt", "id": "apt-cache-final" },
+              "apt-lists-final": { "target": "/var/lib/apt/lists", "id": "apt-lists-final" }
             }
           skip-extraction: ${{ steps.cache-mounts.outputs.cache-hit }}
 
@@ -125,6 +142,7 @@ jobs:
         if: github.ref_name == 'main'
         uses: docker/build-push-action@v6
         with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
@@ -133,10 +151,14 @@ jobs:
           build-args: ${{ steps.vars.outputs.build_args }}
           cache-from: |
             type=gha,scope=shared
-            type=registry,ref=${{ env.CACHE_REF }}
+            type=gha,scope=main-release
+            type=registry,ref=${{ env.CACHE_REF_SHARED }}
+            type=registry,ref=${{ env.CACHE_REF_MAIN_RELEASE }}
           cache-to: |
             type=gha,mode=max,scope=shared
-            type=registry,ref=${{ env.CACHE_REF }},mode=max
+            type=gha,mode=max,scope=main-release
+            type=registry,ref=${{ env.CACHE_REF_SHARED }},mode=max
+            type=registry,ref=${{ env.CACHE_REF_MAIN_RELEASE }},mode=max
           sbom: true
           provenance: true
 
@@ -144,6 +166,7 @@ jobs:
         if: github.ref_name == 'main'
         uses: docker/build-push-action@v6
         with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
@@ -152,10 +175,14 @@ jobs:
           build-args: ${{ steps.vars.outputs.dev_build_args }}
           cache-from: |
             type=gha,scope=shared
-            type=registry,ref=${{ env.CACHE_REF }}
+            type=gha,scope=main-debug
+            type=registry,ref=${{ env.CACHE_REF_SHARED }}
+            type=registry,ref=${{ env.CACHE_REF_MAIN_DEBUG }}
           cache-to: |
+            type=gha,mode=max,scope=shared
             type=gha,mode=max,scope=main-debug
-            type=registry,ref=${{ env.CACHE_REF }},mode=max
+            type=registry,ref=${{ env.CACHE_REF_SHARED }},mode=max
+            type=registry,ref=${{ env.CACHE_REF_MAIN_DEBUG }},mode=max
           sbom: true
           provenance: true
 
@@ -163,6 +190,7 @@ jobs:
         if: github.ref_name != 'main'
         uses: docker/build-push-action@v6
         with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
@@ -171,9 +199,13 @@ jobs:
           build-args: ${{ steps.vars.outputs.build_args }}
           cache-from: |
             type=gha,scope=shared
-            type=registry,ref=${{ env.CACHE_REF }}
+            type=gha,scope=${{ steps.vars.outputs.cache_scope_branch }}
+            type=registry,ref=${{ env.CACHE_REF_SHARED }}
+            type=registry,ref=${{ steps.vars.outputs.cache_ref_branch }}
           cache-to: |
-            type=gha,mode=max,scope=${{ github.ref_name }}
-            type=registry,ref=${{ env.CACHE_REF }},mode=max
+            type=gha,mode=max,scope=shared
+            type=gha,mode=max,scope=${{ steps.vars.outputs.cache_scope_branch }}
+            type=registry,ref=${{ env.CACHE_REF_SHARED }},mode=max
+            type=registry,ref=${{ steps.vars.outputs.cache_ref_branch }},mode=max
           sbom: true
           provenance: true

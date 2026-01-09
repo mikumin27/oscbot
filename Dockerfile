@@ -24,8 +24,7 @@ RUN --mount=type=cache,id=apt-cache-danser,target=/var/cache/apt,sharing=locked 
     --mount=type=cache,id=apt-lists-danser,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
       git git-lfs ca-certificates curl xz-utils \
-      xorg-dev libgl1-mesa-dev libgtk-3-dev \
-    && apt-get clean
+      xorg-dev libgl1-mesa-dev libgtk-3-dev
 
 RUN set -eux; \
     mkdir -p /src/danser; \
@@ -87,11 +86,10 @@ RUN set -eux; \
 FROM rust:1.92.0-bookworm@sha256:3d0d1a335e1d1220d416a1f38f29925d40ec9929d3c83e07a263adf30a7e4aa3 AS oscbot-builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Choose build behavior at build-time
 ARG OSCBOT_PROFILE=release        # "release" or "debug"
 ARG OSCBOT_LTO=thin               # "false", "thin", or "true"
 ARG OSCBOT_CODEGEN_UNITS=16       # faster compiles than 1
-ARG OSCBOT_INCREMENTAL=0          # set 1 for local dev if you want
+ARG OSCBOT_INCREMENTAL=0          # set 1 for dev if you want
 
 ENV CARGO_PROFILE_RELEASE_STRIP=symbols \
     CARGO_PROFILE_RELEASE_LTO=${OSCBOT_LTO} \
@@ -101,9 +99,7 @@ ENV CARGO_PROFILE_RELEASE_STRIP=symbols \
 RUN --mount=type=cache,id=apt-cache-rust,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=apt-lists-rust,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-      pkg-config libssl-dev ca-certificates build-essential \
-      mold \
-    && apt-get clean
+      pkg-config libssl-dev ca-certificates build-essential mold
 
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 
@@ -115,7 +111,12 @@ RUN mkdir -p src && printf 'fn main() {}\n' > src/main.rs
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
     --mount=type=cache,id=cargo-target,target=/app/target \
-    cargo build --release --locked
+    set -eux; \
+    if [ "${OSCBOT_PROFILE}" = "release" ]; then \
+      cargo build --release --locked; \
+    else \
+      cargo build --locked; \
+    fi
 
 COPY src ./src
 
