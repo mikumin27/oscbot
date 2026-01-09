@@ -42,3 +42,9 @@ videoForRegen
 *.osr
 *.osk
 *.osz
+
+# Repository-specific ignores
+README.md
+.gitignore
+.dockerignore
+.dockerignore
