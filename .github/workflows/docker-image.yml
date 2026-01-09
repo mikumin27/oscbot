@@ -12,6 +12,7 @@ on:
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/docker-image.yml
+      - .github/workflows/docker-bake-*.hcl.template
   workflow_dispatch:
 
 concurrency:
