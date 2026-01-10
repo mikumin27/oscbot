@@ -1,0 +1,48 @@
+group "default" {
+  targets = ["main_release", "main_debug"]
+}
+
+target "main_release" {
+  context = "."
+  dockerfile = "Dockerfile"
+  platforms = ["linux/amd64"]
+  tags = ${RELEASE_TAGS}
+  args = {
+    OSCBOT_PROFILE = "release"
+    OSCBOT_LTO = "thin"
+    OSCBOT_CODEGEN_UNITS = "16"
+  }
+  cache-from = [
+    "type=gha,scope=shared",
+    "type=gha,scope=release",
+    "type=registry,ref=${CACHE_REF_SHARED}",
+    "type=registry,ref=${CACHE_REF_RELEASE}"
+  ]
+  cache-to = [
+    "type=gha,mode=max,scope=shared",
+    "type=gha,mode=max,scope=release",
+    "type=registry,ref=${CACHE_REF_SHARED},mode=max",
+    "type=registry,ref=${CACHE_REF_RELEASE},mode=max"
+  ]
+}
+
+target "main_debug" {
+  context = "."
+  dockerfile = "Dockerfile"
+  platforms = ["linux/amd64"]
+  tags = ${DEBUG_TAGS}
+  args = {
+    OSCBOT_PROFILE = "debug"
+    OSCBOT_INCREMENTAL = "1"
+  }
+  cache-from = [
+    "type=gha,scope=shared",
+    "type=gha,scope=debug",
+    "type=registry,ref=${CACHE_REF_SHARED}",
+    "type=registry,ref=${CACHE_REF_DEBUG}"
+  ]
+  cache-to = [
+    "type=gha,mode=max,scope=debug",
+    "type=registry,ref=${CACHE_REF_DEBUG},mode=max"
+  ]
+}

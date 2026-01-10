@@ -1,41 +1,51 @@
+# syntax=docker/dockerfile:1.7-labs
+
 ARG CUDA_VER=12.8.0
 ARG UBUNTU_VER=24.04
-ARG GO_VERSION=1.24.1
 
-FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu${UBUNTU_VER} AS danser-builder
-ARG GO_VERSION
+ARG DANSER_REPO=https://github.com/Wieku/danser-go.git
+ARG DANSER_COMMIT=e97c891604b08d0992b915772965b1d594ad530d
+
+ARG FFMPEG_TAG=autobuild-2026-01-08-12-59
+ARG FFMPEG_ASSET=ffmpeg-N-122390-gaf6a1dd0b2-linux64-gpl-shared.tar.xz
+ARG FFMPEG_SHA256=508c6de70a7ec2840d514ba8ce8bd48aaebc6529b16db435066c876c79a243fc
+
+FROM golang:1.24.11-bookworm@sha256:328a50f29619c1a805851b8e0606ce94637d65c1b239d2fdccdbc3662c4d7313 AS danser-builder
+ARG DANSER_REPO
+ARG DANSER_COMMIT
+ARG FFMPEG_TAG
+ARG FFMPEG_ASSET
+ARG FFMPEG_SHA256
+
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV GOOS=linux GOARCH=amd64 CGO_ENABLED=1
 
-ENV PATH=/usr/local/go/bin:$PATH
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  build-essential git git-lfs ca-certificates curl xz-utils xorg-dev libgl1-mesa-dev libgtk-3-dev \
- && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=apt-cache-danser,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt-lists-danser,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+      git git-lfs ca-certificates curl xz-utils \
+      xorg-dev libgl1-mesa-dev libgtk-3-dev
 
 RUN set -eux; \
-    url="https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"; \
-    for i in 1 2 3; do \
-      curl -fsSL -o /tmp/go.tgz "$url" && break || sleep 3; \
-    done; \
-    rm -rf /usr/local/go; \
-    tar -C /usr/local -xzf /tmp/go.tgz; \
-    rm /tmp/go.tgz
+    mkdir -p /src/danser; \
+    git init /src/danser; \
+    git -C /src/danser remote add origin "${DANSER_REPO}"; \
+    git -C /src/danser fetch --depth 1 origin "${DANSER_COMMIT}"; \
+    git -C /src/danser checkout -q FETCH_HEAD; \
+    git -C /src/danser lfs install --system; \
+    git -C /src/danser lfs pull
 
-RUN git clone --depth 1 --branch dev https://github.com/Wieku/danser-go.git /src/danser
 WORKDIR /src/danser
 
-RUN set -eux; \
-    git lfs install --system; \
-    git lfs pull; \
-    export GOOS=linux; \
-    export GOARCH=amd64; \
-    export CGO_ENABLED=1; \
-    export CC=gcc; \
-    export CXX=g++; \
+RUN --mount=type=cache,id=go-build,target=/root/.cache/go-build \
+    --mount=type=cache,id=go-mod,target=/go/pkg/mod \
+    set -eux; \
+    export CC=gcc CXX=g++; \
     BUILD_DIR=/tmp/danser-build-linux; \
     mkdir -p "$BUILD_DIR"; \
-    go run tools/assets/assets.go ./ "$BUILD_DIR/"; \
-    go build -trimpath -ldflags "-s -w -X 'github.com/wieku/danser-go/build.VERSION=dev' -X 'github.com/wieku/danser-go/build.Stream=Release'" \
+    go run -buildvcs=false tools/assets/assets.go ./ "$BUILD_DIR/"; \
+    go build -buildvcs=false -trimpath \
+      -ldflags "-s -w -X 'github.com/wieku/danser-go/build.VERSION=dev-${DANSER_COMMIT}' -X 'github.com/wieku/danser-go/build.Stream=Release'" \
       -buildmode=c-shared -o "$BUILD_DIR/danser-core.so" \
       -tags "exclude_cimgui_glfw exclude_cimgui_sdli"; \
     mv "$BUILD_DIR/danser-core.so" "$BUILD_DIR/libdanser-core.so"; \
@@ -43,52 +53,101 @@ RUN set -eux; \
     gcc -no-pie -O3 -o "$BUILD_DIR/danser-cli" -I. cmain/main_danser.c -I"$BUILD_DIR/" -Wl,-rpath,'$ORIGIN' -L"$BUILD_DIR/" -ldanser-core; \
     gcc -no-pie -O3 -D LAUNCHER -o "$BUILD_DIR/danser" -I. cmain/main_danser.c -I"$BUILD_DIR/" -Wl,-rpath,'$ORIGIN' -L"$BUILD_DIR/" -ldanser-core; \
     strip "$BUILD_DIR/danser" "$BUILD_DIR/danser-cli" 2>/dev/null || true; \
-    rm -f "$BUILD_DIR/danser-core.h"; \
-    mkdir -p "$BUILD_DIR/ffmpeg/bin"; \
-    curl -fsSL -o /tmp/ffmpeg.tar.xz "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz" \
-      || curl -fsSL -o /tmp/ffmpeg.tar.xz "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl-shared.tar.xz"; \
-    tar -xf /tmp/ffmpeg.tar.xz -C /tmp; \
-    FF_DIR="$(find /tmp -maxdepth 1 -type d -name 'ffmpeg-*' | head -n 1)"; \
-    cp "$FF_DIR/bin/ffmpeg" "$BUILD_DIR/ffmpeg/bin/"; \
-    cp "$FF_DIR/bin/ffprobe" "$BUILD_DIR/ffmpeg/bin/" || true; \
-    cp "$FF_DIR/bin/ffplay"  "$BUILD_DIR/ffmpeg/bin/" || true; \
-    if [ -d "$FF_DIR/lib" ]; then mkdir -p "$BUILD_DIR/ffmpeg/lib" && cp -a "$FF_DIR/lib/." "$BUILD_DIR/ffmpeg/lib/"; fi; \
-    rm -rf /tmp/ffmpeg* /tmp/ffmpeg.tar.xz; \
-    chmod 755 "$BUILD_DIR/danser" "$BUILD_DIR/danser-cli" "$BUILD_DIR/ffmpeg/bin/ffmpeg" || true; \
-    chmod 755 "$BUILD_DIR/ffmpeg/bin/ffprobe" "$BUILD_DIR/ffmpeg/bin/ffplay" 2>/dev/null || true; \
+    rm -f "$BUILD_DIR/danser-core.h"
+
+RUN set -eux; \
+    BUILD_DIR=/tmp/danser-build-linux; \
+    mkdir -p "$BUILD_DIR/ffmpeg"; \
+    url="https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_TAG}/${FFMPEG_ASSET}"; \
+    curl -fSL --retry 5 --retry-connrefused --retry-delay 3 "$url" -o /tmp/ffmpeg.tar.xz; \
+    echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; \
+    \
+    tar -xJf /tmp/ffmpeg.tar.xz -C "$BUILD_DIR/ffmpeg" \
+      --strip-components=1 --wildcards \
+      '*/bin/ffmpeg' \
+      '*/bin/ffprobe' \
+      '*/lib/*'; \
+    \
+    tar -xJf /tmp/ffmpeg.tar.xz -C "$BUILD_DIR/ffmpeg" \
+      --strip-components=1 --wildcards \
+      '*/bin/ffplay' || true; \
+    \
+    rm -f /tmp/ffmpeg.tar.xz; \
+    chmod 755 "$BUILD_DIR"/danser* "$BUILD_DIR/ffmpeg/bin/"* 2>/dev/null || true
+
+RUN set -eux; \
+    BUILD_DIR=/tmp/danser-build-linux; \
     mkdir -p /out/danser; \
     cp -a "$BUILD_DIR/." /out/danser/; \
-    mkdir -p /out/danser/settings /out/danser/Songs /out/danser/Skins /out/danser/Replays /out/danser/videos; \
+    mkdir -p /out/danser/{settings,Songs,Skins,Replays,videos}; \
     rm -rf "$BUILD_DIR"
 
-FROM rustlang/rust:nightly-slim AS oscbot-builder
 
-RUN apt-get update && apt-get install -y \
-    pkg-config libssl-dev ca-certificates build-essential \
- && rm -rf /var/lib/apt/lists/*
+FROM rust:1.92.0-bookworm@sha256:3d0d1a335e1d1220d416a1f38f29925d40ec9929d3c83e07a263adf30a7e4aa3 AS oscbot-builder
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+ARG OSCBOT_PROFILE=release
+ARG OSCBOT_LTO=thin
+ARG OSCBOT_CODEGEN_UNITS=16
+ARG OSCBOT_INCREMENTAL=0
+
+ENV CARGO_PROFILE_RELEASE_STRIP=symbols \
+    CARGO_PROFILE_RELEASE_LTO=${OSCBOT_LTO} \
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=${OSCBOT_CODEGEN_UNITS} \
+    CARGO_INCREMENTAL=${OSCBOT_INCREMENTAL}
+
+RUN --mount=type=cache,id=apt-cache-rust,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt-lists-rust,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+      pkg-config libssl-dev ca-certificates build-essential mold
+
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src \
- && printf 'fn main() {}\n' > src/main.rs \
- && cargo build --release \
- && rm -rf src
+RUN mkdir -p src && printf 'fn main() {}\n' > src/main.rs
+
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=cargo-target-release,target=/app/target-release \
+    --mount=type=cache,id=cargo-target-debug,target=/app/target-debug \
+    set -eux; \
+    if [ "${OSCBOT_PROFILE}" = "release" ]; then \
+      export CARGO_TARGET_DIR=/app/target-release; \
+      cargo build --release --locked; \
+    else \
+      export CARGO_TARGET_DIR=/app/target-debug; \
+      cargo build --locked; \
+    fi
 
 COPY src ./src
-RUN find src -type f -exec touch {} + \
- && rm -f target/release/oscbot \
- && cargo build --release \
- && mkdir -p /out \
- && cp target/release/oscbot /out/oscbot
 
-FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER} AS final
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=cargo-target-release,target=/app/target-release \
+    --mount=type=cache,id=cargo-target-debug,target=/app/target-debug \
+    set -eux; \
+    mkdir -p /out; \
+    if [ "${OSCBOT_PROFILE}" = "release" ]; then \
+      export CARGO_TARGET_DIR=/app/target-release; \
+      cargo build --release --locked; \
+      cp /app/target-release/release/oscbot /out/oscbot; \
+    else \
+      export CARGO_TARGET_DIR=/app/target-debug; \
+      cargo build --locked; \
+      cp /app/target-debug/debug/oscbot /out/oscbot; \
+    fi
+
+FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}@sha256:44e43f0e0bcca1fc6fdc775e6002c67834bf78d39eb1fd76825240fc79ba4a49 AS final
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  ca-certificates \
-  libglvnd0 libegl1 libgles2 libgl1 libgtk-3-0 libglib2.0-0 \
- && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=apt-cache-final,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt-lists-final,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates tini \
+      libssl3 \
+      libglvnd0 libegl1 libgles2 libgl1 libgtk-3-0 libglib2.0-0 \
+    && apt-get clean
 
 RUN install -d -m 755 /etc/glvnd/egl_vendor.d \
  && cat >/etc/glvnd/egl_vendor.d/10_nvidia.json <<'EOF'
@@ -100,20 +159,20 @@ EOF
 
 RUN groupadd -g 1000 appuser 2>/dev/null || true \
  && id -u 1000 >/dev/null 2>&1 || useradd -u 1000 -g 1000 -m -s /bin/bash appuser \
- && mkdir -p /app
+ && install -d -m 755 -o 1000 -g 1000 /app/danser /app/oscbot
 
-COPY --from=danser-builder --chown=1000:1000 --chmod=755 /out/danser /app/danser
+COPY --link --from=danser-builder --chown=1000:1000 --chmod=755 /out/danser /app/danser
+COPY --link --from=oscbot-builder  --chown=1000:1000 --chmod=755 /out/oscbot /app/oscbot/oscbot
 
-ENV LD_LIBRARY_PATH=/app/danser:/app/danser/ffmpeg:/app/danser/ffmpeg/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
+COPY --chown=1000:1000 default-danser.json /app/danser/settings/default.json
+COPY --chown=1000:1000 src/generate/data   /app/oscbot/src/generate/data
 
-RUN ldconfig \
- && mkdir -p /app/oscbot
+RUN printf "%s\n" /app/danser /app/danser/ffmpeg/lib >/etc/ld.so.conf.d/app-danser.conf \
+ && ldconfig
 
-WORKDIR /app/oscbot
-
-COPY --chown=1000:1000 --chmod=755 --from=oscbot-builder /out/oscbot /app/oscbot/oscbot
-COPY --chown=1000:1000 default-danser.json   /app/danser/settings/default.json
-COPY --chown=1000:1000 src/generate/data     /app/oscbot/src/generate/data
+ENV PATH="/app/danser/ffmpeg/bin:${PATH}"
+ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 USER 1000:1000
-ENTRYPOINT ["/app/oscbot/oscbot"]
+WORKDIR /app/oscbot
+ENTRYPOINT ["tini","--","/app/oscbot/oscbot"]

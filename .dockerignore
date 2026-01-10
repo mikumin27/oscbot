@@ -1,8 +1,21 @@
-# Rust build outputs
-/target
-
 # VCS
 .git
+**/.git
+.github
+
+# Rust build outputs
+/target
+target
+**/target
+
+# Logs
+**/*.log
+
+# Build / cache artifacts
+.buildx-cache
+cache-mounts
+out
+**/out
 
 # Local env / secrets (do not bake into image)
 .env
@@ -29,3 +42,9 @@ videoForRegen
 *.osr
 *.osk
 *.osz
+
+# Repository-specific ignores
+README.md
+.gitignore
+.dockerignore
+docker-compose.yaml

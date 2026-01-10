@@ -1,35 +1,45 @@
 name: docker-image
 
 on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - default-danser.json
+      - src/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/docker-image.yml
+      - .github/workflows/docker-bake-*.hcl.template
   workflow_dispatch:
+
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  CACHE_REF_SHARED: ghcr.io/${{ github.repository }}:buildcache-shared
+  CACHE_REF_RELEASE: ghcr.io/${{ github.repository }}:buildcache-release
+  CACHE_REF_DEBUG: ghcr.io/${{ github.repository }}:buildcache-debug
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
+    runs-on: ubuntu-24.04
     steps:
-      - name: Free up disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
-          docker system prune -af || true
-
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
@@ -38,14 +48,130 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Docker build
-        uses: docker/build-push-action@v6
+
+      - name: Compute tags/args
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF_NAME="${GITHUB_REF_NAME}"
+          SHA_SHORT="${GITHUB_SHA::7}"
+
+          BRANCH_TAG="$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
+          if [ -z "$BRANCH_TAG" ]; then BRANCH_TAG="branch"; fi
+
+          echo "branch_tag=$BRANCH_TAG" >> "$GITHUB_OUTPUT"
+          echo "sha_short=$SHA_SHORT" >> "$GITHUB_OUTPUT"
+
+          if [ "$REF_NAME" = "main" ]; then
+            echo "bake_targets=main_release,main_debug" >> "$GITHUB_OUTPUT"
+
+            echo "release_tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+            echo "debug_tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          else
+            echo "bake_targets=branch_debug" >> "$GITHUB_OUTPUT"
+            echo "branch_tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${BRANCH_TAG},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${BRANCH_TAG}-sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+            echo "branch_cache_ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${BRANCH_TAG}" >> "$GITHUB_OUTPUT"
+            echo "branch_cache_scope=branch-${BRANCH_TAG}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure cache dir exists
+        run: mkdir -p cache-mounts
+
+      - name: Cache BuildKit cache mounts (cache-dance backing store)
+        id: cache-mounts
+        uses: actions/cache@v4
         with:
-          context: .
-          file: ./Dockerfile
+          path: cache-mounts
+          key: cache-mounts-v4-${{ runner.os }}-${{ hashFiles('Dockerfile','Cargo.lock','Cargo.toml') }}
+          restore-keys: |
+            cache-mounts-v4-${{ runner.os }}-
+
+      - name: Restore Docker cache mounts
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: cache-mounts
+          dockerfile: Dockerfile
+          cache-map: |
+            {
+              "apt-cache-danser": { "target": "/var/cache/apt", "id": "apt-cache-danser" },
+              "apt-lists-danser": { "target": "/var/lib/apt/lists", "id": "apt-lists-danser" },
+              "go-build": { "target": "/root/.cache/go-build", "id": "go-build" },
+              "go-mod":   { "target": "/go/pkg/mod", "id": "go-mod" },
+
+              "apt-cache-rust": { "target": "/var/cache/apt", "id": "apt-cache-rust" },
+              "apt-lists-rust": { "target": "/var/lib/apt/lists", "id": "apt-lists-rust" },
+              "cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
+              "cargo-git":      { "target": "/usr/local/cargo/git", "id": "cargo-git" },
+              "cargo-target-release": { "target": "/app/target-release", "id": "cargo-target-release" },
+              "cargo-target-debug":   { "target": "/app/target-debug",   "id": "cargo-target-debug" },
+
+              "apt-cache-final": { "target": "/var/cache/apt", "id": "apt-cache-final" },
+              "apt-lists-final": { "target": "/var/lib/apt/lists", "id": "apt-lists-final" }
+            }
+          skip-extraction: ${{ steps.cache-mounts.outputs.cache-hit }}
+
+      - name: Generate docker-bake.hcl
+        shell: bash
+        env:
+          RELEASE_TAGS_CSV: ${{ steps.vars.outputs.release_tags }}
+          DEBUG_TAGS_CSV: ${{ steps.vars.outputs.debug_tags }}
+          BRANCH_TAGS_CSV: ${{ steps.vars.outputs.branch_tags }}
+          BRANCH_CACHE_SCOPE: ${{ steps.vars.outputs.branch_cache_scope }}
+          BRANCH_CACHE_REF: ${{ steps.vars.outputs.branch_cache_ref }}
+        run: |
+          set -euo pipefail
+
+          csv_to_hcl_array() {
+            local csv="${1:-}"
+            IFS=',' read -ra parts <<< "$csv"
+            printf '['
+            local first=1
+            for p in "${parts[@]}"; do
+              p="${p#"${p%%[![:space:]]*}"}"
+              p="${p%"${p##*[![:space:]]}"}"
+              [ -z "$p" ] && continue
+              if [ $first -eq 0 ]; then printf ', '; fi
+              first=0
+              printf '"%s"' "$p"
+            done
+            printf ']'
+          }
+
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            export RELEASE_TAGS="$(csv_to_hcl_array "${RELEASE_TAGS_CSV:-}")"
+            export DEBUG_TAGS="$(csv_to_hcl_array "${DEBUG_TAGS_CSV:-}")"
+
+            if [ "$RELEASE_TAGS" = "[]" ] || [ "$DEBUG_TAGS" = "[]" ]; then
+              echo "Missing RELEASE_TAGS_CSV or DEBUG_TAGS_CSV" >&2
+              exit 1
+            fi
+
+            envsubst < .github/workflows/docker-bake-main.hcl.template > docker-bake.hcl
+          else
+            SHA_SHORT="${GITHUB_SHA::7}"
+            BRANCH_TAG="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
+            [ -z "$BRANCH_TAG" ] && BRANCH_TAG="branch"
+
+            BRANCH_TAGS_CSV="${BRANCH_TAGS_CSV:-${REGISTRY}/${IMAGE_NAME}:${BRANCH_TAG},${REGISTRY}/${IMAGE_NAME}:${BRANCH_TAG}-sha-${SHA_SHORT}}"
+            export BRANCH_CACHE_SCOPE="${BRANCH_CACHE_SCOPE:-branch-${BRANCH_TAG}}"
+            export BRANCH_CACHE_REF="${BRANCH_CACHE_REF:-${REGISTRY}/${IMAGE_NAME}:buildcache-${BRANCH_TAG}}"
+            export BRANCH_TAGS="$(csv_to_hcl_array "${BRANCH_TAGS_CSV}")"
+
+            envsubst < .github/workflows/docker-bake-branch.hcl.template > docker-bake.hcl
+          fi
+
+          echo "---- docker-bake.hcl ----"
+          cat docker-bake.hcl
+
+      - name: Build & push (parallel targets via Bake)
+        uses: docker/bake-action@v6
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          source: .
+          files: docker-bake.hcl
+          targets: ${{ steps.vars.outputs.bake_targets }}
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          sbom: true
+          provenance: true

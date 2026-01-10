@@ -13,9 +13,61 @@ use tokio::sync::mpsc;
 use zip::ZipArchive;
 
 use tokio::{fs::{File, create_dir}, io::AsyncWriteExt};
+use tracing::Level;
 
 use crate::discord_helper::ContextForFunctions;
 use crate::{Error, embeds};
+
+fn is_ffmpeg_progress_line(line: &str) -> bool {
+    let l = line.trim_start();
+
+    if l.starts_with("frame=") {
+        return true;
+    }
+
+    l.contains("frame=") && l.contains("fps=") && l.contains("time=") && l.contains("speed=")
+}
+
+fn danser_stream_line_level(line: &str) -> Level {
+    let l = line.trim();
+    if l.is_empty() {
+        return Level::TRACE;
+    }
+
+    if l.contains("Progress: ") {
+        return Level::INFO;
+    }
+
+    if l.contains("danser-go version") {
+        return Level::DEBUG;
+    }
+    if l.starts_with("ffmpeg version ") {
+        return Level::DEBUG;
+    }
+    if l.starts_with("libav") {
+        return Level::DEBUG;
+    }
+
+    if is_ffmpeg_progress_line(l) {
+        if l.contains("q=-1.0") {
+            return Level::DEBUG;
+        }
+        return Level::INFO;
+    }
+
+    if l.contains("video:0KiB") && l.contains("audio:") && l.contains("muxing overhead") {
+        return Level::DEBUG;
+    }
+
+    if l.contains("video:") && l.contains("audio:") && l.contains("muxing overhead") {
+        return Level::DEBUG;
+    }
+    if l.contains("Starting second pass: moving the moov atom") {
+        return Level::DEBUG;
+    }
+
+    Level::TRACE
+}
 
 fn fallback_latest_rendered_video(output_dir: &str, started_at: SystemTime) -> Option<String> {
     let start_slack = started_at.checked_sub(Duration::from_secs(10)).unwrap_or(started_at);
@@ -133,12 +185,14 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
                 };
 
                 if stream_logs {
-                    if stream == "stderr" {
-                        tracing::info!("[danser {stream}] {line}");
-                    } else {
-                        tracing::debug!("[danser {stream}] {line}");
+                    let level = danser_stream_line_level(&line);
+                    match level {
+                        Level::ERROR => tracing::error!("[danser {stream}] {line}"),
+                        Level::WARN => tracing::warn!("[danser {stream}] {line}"),
+                        Level::INFO => tracing::info!("[danser {stream}] {line}"),
+                        Level::DEBUG => tracing::debug!("[danser {stream}] {line}"),
+                        Level::TRACE => tracing::trace!("[danser {stream}] {line}"),
                     }
-                    // Ensure logs show up promptly in non-tty Docker logging.
                     let _ = std::io::stdout().flush();
                     let _ = std::io::stderr().flush();
                 }
