@@ -1,7 +1,8 @@
 use poise::serenity_prelude::CreateAttachment;
 use rosu_v2::prelude as rosu;
 
-use crate::{Error, apis::{nerinyan, youtube}, discord_helper::{ContextForFunctions}, embeds, generate::{danser, thumbnail, youtube_text}};
+use crate::{Error, apis::{youtube}, discord_helper::{ContextForFunctions}, embeds, generate::{danser, thumbnail, youtube_text}};
+use crate::apis;
 
 pub async fn render_and_upload_by_score(
     cff: &ContextForFunctions<'_>,
@@ -45,7 +46,7 @@ pub async fn render_and_upload(
     description: String,
     thumbnail: Vec<u8>
 ) -> Result<(), Error> {
-    nerinyan::download_mapset(cff, mapset_id).await?;
+    apis::download_mapset(cff, mapset_id).await?;
     let replay_bytes = danser::get_replay_bytes(&replay_reference, &map_hash).await?;
     cff.edit(embeds::render_and_upload_embed(&title, true, None, false)?, vec![]).await?;
     let replay_path = danser::render(cff, &title, map_hash, replay_reference, user_id).await?;
