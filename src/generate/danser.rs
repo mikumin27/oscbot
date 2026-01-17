@@ -363,13 +363,13 @@ pub async fn resolve_correct_skin(user: Option<user::Model>, identifier: Option<
         None => None,
         Some(user) => {
             if identifier.is_some() {
-                match db::get_skin_by_identifier(user, identifier.unwrap()).await? {
+                match db::get_skin_by_identifier(user.clone(), identifier.unwrap()).await? {
                     Some(skin) => return Ok(Some(skin)),
                     None => ()
                 }
             }
             let relevant_defaults = get_all_mod_defaults(mods);
-            let skins = skin::Entity::find().filter(skin::Column::Default.ne::<Option<String>>(None)).all(&db::get_db()).await?;
+            let skins = skin::Entity::find().filter(skin::Column::Default.ne::<Option<String>>(None)).filter(skin::Column::User.eq::<i64>(user.id)).all(&db::get_db()).await?;
             for relevant_default in relevant_defaults {
                 match skins.iter().filter(|skin| skin.default == relevant_default.to_db()).next() {
                     Some(skin) => return Ok(Some(skin.clone())),
