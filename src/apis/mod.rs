@@ -1,4 +1,4 @@
-use std::{env, fs::remove_file, io::ErrorKind};
+use std::{env, fs::{remove_dir_all, remove_file}, io::ErrorKind};
 
 use tokio::{fs::File, io::AsyncWriteExt};
 
@@ -12,6 +12,7 @@ pub mod youtube;
 
 async fn push_mapset(mapset_id: &u32, contents: Vec<u8>) -> Result<(), Error> {
     let osz_path = format!("{}/Songs/{}.osz", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH must exist"), mapset_id);
+    remove_file(&osz_path).ok();
 
     let mut file = match File::create(osz_path).await {
         Ok(file) => file,
@@ -32,7 +33,7 @@ async fn push_mapset(mapset_id: &u32, contents: Vec<u8>) -> Result<(), Error> {
 
 pub async fn download_mapset(cff: &ContextForFunctions<'_>, mapset_id: &u32) -> Result<(), Error> {
     let osz_path = format!("{}/Songs/{}", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH must exist"), mapset_id);
-    _ = remove_file(&osz_path);
+    remove_dir_all(&osz_path).ok();
     match nerinyan::download_mapset(mapset_id).await? {
         Some(skin) => {
             push_mapset(mapset_id, skin).await?;
