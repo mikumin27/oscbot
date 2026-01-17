@@ -9,7 +9,7 @@ pub async fn update_migrations() -> Result<(), Error> {
         File::create("app.db").unwrap().flush()?;
     }
     
-    let pool = SqlitePool::connect("sqlite://app.db").await?;
+    let pool = SqlitePool::connect(&std::env::var("DATABASE_URL").expect("DATABASE_URL must exist")).await?;
 
     // runs pending migrations from ./migrations
     sqlx::migrate!("./migrations").run(&pool).await?;
