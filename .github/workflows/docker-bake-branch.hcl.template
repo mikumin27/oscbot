@@ -15,7 +15,9 @@ target "branch_debug" {
     "type=gha,scope=shared",
     "type=gha,scope=debug",
     "type=registry,ref=${CACHE_REF_SHARED}",
-    "type=registry,ref=${CACHE_REF_DEBUG}"
+    "type=registry,ref=${CACHE_REF_DEBUG}",
+    "type=gha,scope=${BRANCH_CACHE_SCOPE}",
+    "type=registry,ref=${BRANCH_CACHE_REF}"
   ]
   cache-to = [
     "type=gha,mode=max,scope=${BRANCH_CACHE_SCOPE}",
