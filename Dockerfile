@@ -106,6 +106,8 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 
+COPY migrations ./migrations
+
 COPY src ./src
 
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
