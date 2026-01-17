@@ -105,20 +105,6 @@ ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src && printf 'fn main() {}\n' > src/main.rs
-
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=cargo-target-release,target=/app/target-release \
-    --mount=type=cache,id=cargo-target-debug,target=/app/target-debug \
-    set -eux; \
-    if [ "${OSCBOT_PROFILE}" = "release" ]; then \
-      export CARGO_TARGET_DIR=/app/target-release; \
-      cargo build --release --locked; \
-    else \
-      export CARGO_TARGET_DIR=/app/target-debug; \
-      cargo build --locked; \
-    fi
 
 COPY src ./src
 
