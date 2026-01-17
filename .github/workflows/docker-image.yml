@@ -87,7 +87,7 @@ jobs:
 
       - name: Restore BuildKit cache mounts (cache-dance backing store)
         id: cache-mounts-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: cache-mounts
           key: ${{ steps.cachevars.outputs.prefix }}
@@ -217,7 +217,7 @@ jobs:
 
       - name: Save BuildKit cache mounts
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: cache-mounts
           key: ${{ steps.cachevars.outputs.prefix }}-${{ github.run_id }}
