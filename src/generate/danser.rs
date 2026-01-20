@@ -295,9 +295,11 @@ pub async fn get_replay_bytes(replay_reference: &String, beatmap_hash: &String) 
 
 pub async fn cleanup_files(beatmap_hash: &String, replay_reference: &String, video_path: &String) {
     tracing::debug!(reference = replay_reference, "Cleanup files for replay...");
+    let beatmap_path = format!("{}/Songs/{}", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH must exist"), replay_reference);
     let replay_path = &format!("{}/Replays/{}/{}.osr", env::var("OSC_BOT_DANSER_PATH").unwrap(), beatmap_hash, replay_reference);
     let path = &format!("{}/Skins/{}", env::var("OSC_BOT_DANSER_PATH").unwrap(), replay_reference);
     remove_dir_all(path).ok();
+    remove_dir_all(&beatmap_path).ok();
     remove_file(replay_path).ok();
     remove_file(video_path).ok();
 }

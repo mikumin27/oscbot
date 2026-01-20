@@ -4,16 +4,18 @@ use tokio::{fs::File, io::AsyncWriteExt};
 
 use crate::{Error, discord_helper::{ContextForFunctions, MessageState}, embeds};
 
-mod catboy;
 mod nerinyan;
+mod catboy;
+mod sayobot;
 
 pub mod huismetbenen;
 pub mod youtube;
 
-async fn push_mapset(mapset_id: &u32, contents: Vec<u8>) -> Result<(), Error> {
-    let osz_path = format!("{}/Songs/{}.osz", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH must exist"), mapset_id);
+async fn push_mapset(file_name: &String, contents: Vec<u8>) -> Result<(), Error> {
+    let osz_path = format!("{}/Songs/{}.osz", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH must exist"), file_name);
+    let beatmap_path = format!("{}/Songs/{}", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH must exist"), file_name);
     remove_file(&osz_path).ok();
-
+    remove_dir_all(&beatmap_path).ok();
     let mut file = match File::create(osz_path).await {
         Ok(file) => file,
         Err(error) => {
@@ -27,24 +29,32 @@ async fn push_mapset(mapset_id: &u32, contents: Vec<u8>) -> Result<(), Error> {
     file.write_all(&contents).await?;
 
     file.flush().await?;
-    tracing::info!(mapset_id = mapset_id, "download of osk has finished");
     Ok(())
 }
 
-pub async fn download_mapset(cff: &ContextForFunctions<'_>, mapset_id: &u32) -> Result<(), Error> {
-    let osz_path = format!("{}/Songs/{}", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH must exist"), mapset_id);
-    remove_dir_all(&osz_path).ok();
+pub async fn download_mapset(cff: &ContextForFunctions<'_>, mapset_id: &u32, folder_name: &String) -> Result<(), Error> {
     match nerinyan::download_mapset(mapset_id).await? {
         Some(skin) => {
-            push_mapset(mapset_id, skin).await?;
+            push_mapset(folder_name, skin).await?;
+            tracing::info!(mapset_id = mapset_id, "download via nerinyan of osk has finished");
             return Ok(())
         },
-        None => tracing::warn!(mapset_id = mapset_id, "Could not download mapset from nerinyan. Falling back to catboy.best")
+        None => tracing::warn!(mapset_id = mapset_id, "Could not download mapset from nerinyan. Falling back to sayobot")
+    }
+
+    match sayobot::download_mapset(mapset_id).await? {
+        Some(skin) => {
+            push_mapset(folder_name, skin).await?;
+            tracing::info!(mapset_id = mapset_id, "download of via sayobot osk has finished");
+            return Ok(())
+        },
+        None => tracing::warn!(mapset_id = mapset_id, "Could not download mapset from sayobot. Falling back to catboy.best")
     }
 
     match catboy::download_mapset(mapset_id).await? {
         Some(skin) => {
-            push_mapset(mapset_id, skin).await?;
+            push_mapset(folder_name, skin).await?;
+            tracing::info!(mapset_id = mapset_id, "download of osk via catboy.best has finished");
             return Ok(())
         },
         None => tracing::error!(mapset_id = mapset_id, "Could not download mapset from catboy.best. Could not download beatmap.")
