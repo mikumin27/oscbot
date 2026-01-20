@@ -139,6 +139,7 @@ pub async fn render_and_upload (
     #[description = "score file"] scorefile: Option<serenity::Attachment>,
     #[description = "subtitle inside the thumbnail"] subtitle: Option<String>,
     #[description = "identifier for skin (searches by player)"] identifier: Option<String>,
+    #[description = "skip beatmap download"] skip_beatmap_download: Option<bool>,
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let reply = ctx.send(CreateReply::default().embed(embeds::render_and_upload_embed(&"...".into(), false, None, false)?)).await?;
@@ -176,7 +177,7 @@ pub async fn render_and_upload (
         let user = user::Entity::find().filter(user::Column::OsuId.eq(score.user_id)).one(&db::get_db()).await?;
         let acronym_mods: Vec<String> = mods.iter().map(|game_mod| game_mod.acronym().to_string()).collect();
         let skin = danser::resolve_correct_skin(user, identifier, acronym_mods).await?;
-        upload::render_and_upload_by_score(&cff, score, map, subtitle, skin).await?;
+        upload::render_and_upload_by_score(&cff, score, map, subtitle, skin, skip_beatmap_download.unwrap_or(false)).await?;
     }
     else if scorefile.is_some() {
         let bytes = scorefile.unwrap().download().await?;
@@ -206,7 +207,7 @@ pub async fn render_and_upload (
         let db_user = user::Entity::find().filter(user::Column::OsuId.eq(player.user_id)).one(&db::get_db()).await?;
         let mods = convert_osu_db_to_mod_array(replay.mods);
         let skin = danser::resolve_correct_skin(db_user, identifier, mods).await?;
-        upload::render_and_upload_by_replay(&cff, replay, map, player, subtitle, skin).await?;
+        upload::render_and_upload_by_replay(&cff, replay, map, player, subtitle, skin, skip_beatmap_download.unwrap_or(false)).await?;
     }
     else {
         embeds::single_text_response(&ctx, "Please define scoreid or scorefile", MessageState::WARN, false).await;

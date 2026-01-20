@@ -123,7 +123,7 @@ async fn upload_score_by_replay(ctx: &serenity::Context, component: &serenity::C
     let user = user::Entity::find().filter(user::Column::OsuId.eq(player.user_id)).one(&db::get_db()).await?;
     let mods = convert_osu_db_to_mod_array(replay.mods);
     let skin = danser::resolve_correct_skin(user, score.skin_identifier.clone(), mods).await?;
-    upload::render_and_upload_by_replay(&cff, replay, score.map.clone(),  player,None, skin).await?;
+    upload::render_and_upload_by_replay(&cff, replay, score.map.clone(),  player,None, skin, false).await?;
     Ok(title)
 }
 
@@ -145,7 +145,7 @@ async fn upload_score_by_score(ctx: &serenity::Context, component: &serenity::Co
     let user = user::Entity::find().filter(user::Column::OsuId.eq(score.user_id)).one(&db::get_db()).await?;
     let acronym_mods: Vec<String> = score.mods.iter().map(|game_mod| game_mod.acronym().to_string()).collect();
     let skin = danser::resolve_correct_skin(user, score_mapping.skin_identifier.clone(), acronym_mods).await?;
-    upload::render_and_upload_by_score(&cff, score, map, None, skin).await?;
+    upload::render_and_upload_by_score(&cff, score, map, None, skin, false).await?;
     Ok(title)
 }
 

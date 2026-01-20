@@ -10,13 +10,14 @@ pub async fn render_and_upload_by_score(
     map: rosu::BeatmapExtended,
     subtitle: Option<String>,
     skin: Option<skin::Model>,
+    skip_beatmap_download: bool,
 ) -> Result<(), Error> {
     let title = youtube_text::generate_title_with_score(&score, &map).await;
     cff.edit(embeds::render_and_upload_embed(&title, false, None, false)?, vec![]).await?;
     let thumbnail = thumbnail::generate_thumbnail_from_score(&score, &map, &subtitle.unwrap_or("".to_string())).await;
     let description = youtube_text::generate_description(score.user_id, map.map_id, Some(&score), None);
 
-    render_and_upload(cff, &score.id.to_string(), &map.mapset_id, &map.checksum.unwrap(), title, description, thumbnail, skin).await?;
+    render_and_upload(cff, &score.id.to_string(), &map.mapset_id, &map.checksum.unwrap(), title, description, thumbnail, skin, skip_beatmap_download).await?;
     Ok(())
 }
 
@@ -27,13 +28,14 @@ pub async fn render_and_upload_by_replay(
     user: rosu::UserExtended,
     subtitle: Option<String>,
     skin: Option<skin::Model>,
+    skip_beatmap_download: bool
 ) -> Result<(), Error> {
     let title = youtube_text::generate_title_with_replay(&replay, &map).await;
     cff.edit(embeds::render_and_upload_embed(&title, false, None, false)?, vec![]).await?;
     let timestamp = replay.timestamp.format("%d.%m.%Y at %H:%M").to_string();
     let thumbnail = thumbnail::generate_thumbnail_from_replay_file(&replay, &map, &subtitle.unwrap_or("".to_string())).await;
     let description = youtube_text::generate_description(user.user_id, map.map_id, None, Some(timestamp));
-    render_and_upload(cff, &replay.replay_hash.unwrap(), &map.mapset_id, &map.checksum.unwrap(), title, description, thumbnail, skin).await?;
+    render_and_upload(cff, &replay.replay_hash.unwrap(), &map.mapset_id, &map.checksum.unwrap(), title, description, thumbnail, skin, skip_beatmap_download).await?;
 
     Ok(())
 }
@@ -46,9 +48,12 @@ pub async fn render_and_upload(
     title: String,
     description: String,
     thumbnail: Vec<u8>,
-    skin: Option<skin::Model>
+    skin: Option<skin::Model>,
+    skip_beatmap_download: bool
 ) -> Result<(), Error> {
-    apis::download_mapset(cff, mapset_id, replay_reference).await?;
+    if !skip_beatmap_download {
+        apis::download_mapset(cff, mapset_id, replay_reference).await?;
+    }
     let replay_bytes = danser::get_replay_bytes(&replay_reference, &map_hash).await?;
     cff.edit(embeds::render_and_upload_embed(&title, true, None, false)?, vec![]).await?;
     match skin {
