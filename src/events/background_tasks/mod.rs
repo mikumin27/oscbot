@@ -1,10 +1,9 @@
 use poise::serenity_prelude as serenity;
 
+use crate::events::background_tasks::refresh_feed::run_refresh_feed;
+
 mod refresh_feed;
 
-pub async fn start_background_tasks(ctx: serenity::Context) {
-    loop {
-        _ = refresh_feed::refresh_feed(&ctx).await;
-        tokio::time::sleep(std::time::Duration::from_secs(180)).await;
-    }
+pub fn start_background_tasks(ctx: &serenity::Context) {
+    tokio::spawn(run_refresh_feed(ctx.clone()));
 }

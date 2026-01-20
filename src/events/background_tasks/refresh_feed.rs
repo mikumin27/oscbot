@@ -19,6 +19,13 @@ fn get_clone() -> Option<Vec<String>> {
     value().lock().unwrap().clone()
 }
 
+pub async fn run_refresh_feed(ctx: serenity::Context) -> Result<(), Error> {
+    loop {
+        refresh_feed(&ctx).await.ok();
+        tokio::time::sleep(std::time::Duration::from_secs(180)).await;
+    }
+}
+
 pub async fn refresh_feed(ctx: &serenity::Context) -> Result<(), Error> {
     tracing::debug!("checking youtube for new video uploads");
     let url = format!("https://www.youtube.com/feeds/videos.xml?channel_id={}", env::var("OSC_BOT_YOUTUBE_CHANNEL_ID").unwrap());
