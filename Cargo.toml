@@ -20,7 +20,7 @@ url = "2.5.7"
 futures-util = "0.3.31"
 dotenvy = "0.15.7"
 zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
-google-youtube3 = "6.0.0+20240626"
+google-youtube3 = "7.0.0+20240626"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 quick-xml = "0.39.0"
