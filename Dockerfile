@@ -83,7 +83,7 @@ RUN set -eux; \
     rm -rf "$BUILD_DIR"
 
 
-FROM rust:1.92.0-bookworm@sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2 AS oscbot-builder
+FROM rust:1.93.0-bookworm@sha256:812df42b4a866cf7165934691a0a89061281679a145b857dc679be8132e709b9 AS oscbot-builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG OSCBOT_PROFILE=release
