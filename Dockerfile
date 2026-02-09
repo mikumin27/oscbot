@@ -10,7 +10,7 @@ ARG FFMPEG_TAG=autobuild-2026-01-08-12-59
 ARG FFMPEG_ASSET=ffmpeg-N-122390-gaf6a1dd0b2-linux64-gpl-shared.tar.xz
 ARG FFMPEG_SHA256=508c6de70a7ec2840d514ba8ce8bd48aaebc6529b16db435066c876c79a243fc
 
-FROM golang:1.25.6-bookworm@sha256:2f768d462dbffbb0f0b3a5171009f162945b086f326e0b2a8fd5d29c3219ff14 AS danser-builder
+FROM golang:1.25.7-bookworm@sha256:38342f3e7a504bf1efad858c18e771f84b66dc0b363add7a57c9a0bbb6cf7b12 AS danser-builder
 ARG DANSER_REPO
 ARG DANSER_COMMIT
 ARG FFMPEG_TAG
