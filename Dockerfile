@@ -6,16 +6,14 @@ ARG UBUNTU_VER=24.04
 ARG DANSER_REPO=https://github.com/Wieku/danser-go.git
 ARG DANSER_COMMIT=e97c891604b08d0992b915772965b1d594ad530d
 
-ARG FFMPEG_TAG=autobuild-2026-01-08-12-59
-ARG FFMPEG_ASSET=ffmpeg-N-122390-gaf6a1dd0b2-linux64-gpl-shared.tar.xz
-ARG FFMPEG_SHA256=508c6de70a7ec2840d514ba8ce8bd48aaebc6529b16db435066c876c79a243fc
+ARG FFMPEG_TAG=latest
+ARG FFMPEG_ASSET=ffmpeg-master-latest-linux64-gpl-shared.tar.xz
 
 FROM golang:1.25.6-bookworm@sha256:2f768d462dbffbb0f0b3a5171009f162945b086f326e0b2a8fd5d29c3219ff14 AS danser-builder
 ARG DANSER_REPO
 ARG DANSER_COMMIT
 ARG FFMPEG_TAG
 ARG FFMPEG_ASSET
-ARG FFMPEG_SHA256
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV GOOS=linux GOARCH=amd64 CGO_ENABLED=1
@@ -58,21 +56,26 @@ RUN --mount=type=cache,id=go-build,target=/root/.cache/go-build \
 RUN set -eux; \
     BUILD_DIR=/tmp/danser-build-linux; \
     mkdir -p "$BUILD_DIR/ffmpeg"; \
-    url="https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_TAG}/${FFMPEG_ASSET}"; \
-    curl -fSL --retry 5 --retry-connrefused --retry-delay 3 "$url" -o /tmp/ffmpeg.tar.xz; \
-    echo "${FFMPEG_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; \
+    base="https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_TAG}"; \
     \
-    tar -xJf /tmp/ffmpeg.tar.xz -C "$BUILD_DIR/ffmpeg" \
+    curl -fSL --retry 5 --retry-connrefused --retry-delay 3 \
+      "${base}/${FFMPEG_ASSET}" -o "/tmp/${FFMPEG_ASSET}"; \
+    curl -fSL --retry 5 --retry-connrefused --retry-delay 3 \
+      "${base}/checksums.sha256" -o /tmp/checksums.sha256; \
+    \
+    grep " ${FFMPEG_ASSET}\$" /tmp/checksums.sha256 | (cd /tmp && sha256sum -c -); \
+    \
+    tar -xJf "/tmp/${FFMPEG_ASSET}" -C "$BUILD_DIR/ffmpeg" \
       --strip-components=1 --wildcards \
       '*/bin/ffmpeg' \
       '*/bin/ffprobe' \
       '*/lib/*'; \
     \
-    tar -xJf /tmp/ffmpeg.tar.xz -C "$BUILD_DIR/ffmpeg" \
+    tar -xJf "/tmp/${FFMPEG_ASSET}" -C "$BUILD_DIR/ffmpeg" \
       --strip-components=1 --wildcards \
       '*/bin/ffplay' || true; \
     \
-    rm -f /tmp/ffmpeg.tar.xz; \
+    rm -f "/tmp/${FFMPEG_ASSET}" /tmp/checksums.sha256; \
     chmod 755 "$BUILD_DIR"/danser* "$BUILD_DIR/ffmpeg/bin/"* 2>/dev/null || true
 
 RUN set -eux; \
@@ -105,9 +108,7 @@ ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
-
 COPY migrations ./migrations
-
 COPY src ./src
 
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
