@@ -25,5 +25,5 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 quick-xml = "0.39.0"
 anyhow = "1.0.100"
-sea-orm = { version = "2.0.0-rc.30", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
+sea-orm = { version = "2.0.0-rc.31", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "migrate"] }
