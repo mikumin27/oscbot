@@ -9,7 +9,7 @@ ARG DANSER_COMMIT=e97c891604b08d0992b915772965b1d594ad530d
 ARG FFMPEG_TAG=latest
 ARG FFMPEG_ASSET=ffmpeg-master-latest-linux64-gpl-shared.tar.xz
 
-FROM golang:1.25.6-bookworm@sha256:2f768d462dbffbb0f0b3a5171009f162945b086f326e0b2a8fd5d29c3219ff14 AS danser-builder
+FROM golang:1.26.0-bookworm@sha256:eae3cdfa040d0786510a5959d36a836978724d03b34a166ba2e0e198baac9196 AS danser-builder
 ARG DANSER_REPO
 ARG DANSER_COMMIT
 ARG FFMPEG_TAG
