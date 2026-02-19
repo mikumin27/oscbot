@@ -86,7 +86,7 @@ jobs:
             echo "cache_ref_release=${IMAGE_REPO}:buildcache-rust-shared" >> "$GITHUB_OUTPUT"
           else
             echo "runtime_tags=${IMAGE_REPO}:${BRANCH_TAG},${IMAGE_REPO}:${BRANCH_TAG}-sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-            echo "build_image_ref=${BUILD_IMAGE_REPO}:${BRANCH_TAG}" >> "$GITHUB_OUTPUT"
+            echo "build_image_ref=${BUILD_IMAGE_REPO}:latest" >> "$GITHUB_OUTPUT"
             echo "cache_ref_release=${IMAGE_REPO}:buildcache-rust-shared" >> "$GITHUB_OUTPUT"
           fi
 
