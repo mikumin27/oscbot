@@ -1,90 +1,6 @@
-# syntax=docker/dockerfile:1.7-labs
-
 ARG CUDA_VER=12.8.0
 ARG UBUNTU_VER=24.04
-
-ARG DANSER_REPO=https://github.com/Wieku/danser-go.git
-ARG DANSER_COMMIT=e97c891604b08d0992b915772965b1d594ad530d
-
-ARG FFMPEG_TAG=latest
-ARG FFMPEG_ASSET=ffmpeg-master-latest-linux64-gpl-shared.tar.xz
-
-FROM golang:1.26.0-bookworm@sha256:eae3cdfa040d0786510a5959d36a836978724d03b34a166ba2e0e198baac9196 AS danser-builder
-ARG DANSER_REPO
-ARG DANSER_COMMIT
-ARG FFMPEG_TAG
-ARG FFMPEG_ASSET
-
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ENV GOOS=linux GOARCH=amd64 CGO_ENABLED=1
-
-RUN --mount=type=cache,id=apt-cache-danser,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-lists-danser,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-      git git-lfs ca-certificates curl xz-utils \
-      xorg-dev libgl1-mesa-dev libgtk-3-dev
-
-RUN set -eux; \
-    mkdir -p /src/danser; \
-    git init /src/danser; \
-    git -C /src/danser remote add origin "${DANSER_REPO}"; \
-    git -C /src/danser fetch --depth 1 origin "${DANSER_COMMIT}"; \
-    git -C /src/danser checkout -q FETCH_HEAD; \
-    git -C /src/danser lfs install --system; \
-    git -C /src/danser lfs pull
-
-WORKDIR /src/danser
-
-RUN --mount=type=cache,id=go-build,target=/root/.cache/go-build \
-    --mount=type=cache,id=go-mod,target=/go/pkg/mod \
-    set -eux; \
-    export CC=gcc CXX=g++; \
-    BUILD_DIR=/tmp/danser-build-linux; \
-    mkdir -p "$BUILD_DIR"; \
-    go run -buildvcs=false tools/assets/assets.go ./ "$BUILD_DIR/"; \
-    go build -buildvcs=false -trimpath \
-      -ldflags "-s -w -X 'github.com/wieku/danser-go/build.VERSION=dev-${DANSER_COMMIT}' -X 'github.com/wieku/danser-go/build.Stream=Release'" \
-      -buildmode=c-shared -o "$BUILD_DIR/danser-core.so" \
-      -tags "exclude_cimgui_glfw exclude_cimgui_sdli"; \
-    mv "$BUILD_DIR/danser-core.so" "$BUILD_DIR/libdanser-core.so"; \
-    cp libbass.so libbass_fx.so libbassmix.so libyuv.so libSDL3.so "$BUILD_DIR/"; \
-    gcc -no-pie -O3 -o "$BUILD_DIR/danser-cli" -I. cmain/main_danser.c -I"$BUILD_DIR/" -Wl,-rpath,'$ORIGIN' -L"$BUILD_DIR/" -ldanser-core; \
-    gcc -no-pie -O3 -D LAUNCHER -o "$BUILD_DIR/danser" -I. cmain/main_danser.c -I"$BUILD_DIR/" -Wl,-rpath,'$ORIGIN' -L"$BUILD_DIR/" -ldanser-core; \
-    strip "$BUILD_DIR/danser" "$BUILD_DIR/danser-cli" 2>/dev/null || true; \
-    rm -f "$BUILD_DIR/danser-core.h"
-
-RUN set -eux; \
-    BUILD_DIR=/tmp/danser-build-linux; \
-    mkdir -p "$BUILD_DIR/ffmpeg"; \
-    base="https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_TAG}"; \
-    \
-    curl -fSL --retry 5 --retry-connrefused --retry-delay 3 \
-      "${base}/${FFMPEG_ASSET}" -o "/tmp/${FFMPEG_ASSET}"; \
-    curl -fSL --retry 5 --retry-connrefused --retry-delay 3 \
-      "${base}/checksums.sha256" -o /tmp/checksums.sha256; \
-    \
-    grep " ${FFMPEG_ASSET}\$" /tmp/checksums.sha256 | (cd /tmp && sha256sum -c -); \
-    \
-    tar -xJf "/tmp/${FFMPEG_ASSET}" -C "$BUILD_DIR/ffmpeg" \
-      --strip-components=1 --wildcards \
-      '*/bin/ffmpeg' \
-      '*/bin/ffprobe' \
-      '*/lib/*'; \
-    \
-    tar -xJf "/tmp/${FFMPEG_ASSET}" -C "$BUILD_DIR/ffmpeg" \
-      --strip-components=1 --wildcards \
-      '*/bin/ffplay' || true; \
-    \
-    rm -f "/tmp/${FFMPEG_ASSET}" /tmp/checksums.sha256; \
-    chmod 755 "$BUILD_DIR"/danser* "$BUILD_DIR/ffmpeg/bin/"* 2>/dev/null || true
-
-RUN set -eux; \
-    BUILD_DIR=/tmp/danser-build-linux; \
-    mkdir -p /out/danser; \
-    cp -a "$BUILD_DIR/." /out/danser/; \
-    mkdir -p /out/danser/{settings,Songs,Skins,Replays,videos}; \
-    rm -rf "$BUILD_DIR"
-
+ARG BUILD_IMAGE=oscbot-build:latest
 
 FROM rust:1.93.0-bookworm@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382 AS oscbot-builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -100,8 +16,8 @@ ENV CARGO_PROFILE_RELEASE_STRIP=symbols \
     CARGO_INCREMENTAL=${OSCBOT_INCREMENTAL}
 
 RUN --mount=type=cache,id=apt-cache-rust,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-lists-rust,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+  --mount=type=cache,id=apt-lists-rust,target=/var/lib/apt/lists,sharing=locked \
+  apt-get update && apt-get install -y --no-install-recommends \
       pkg-config libssl-dev ca-certificates build-essential mold
 
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
@@ -130,9 +46,9 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharin
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}@sha256:44e43f0e0bcca1fc6fdc775e6002c67834bf78d39eb1fd76825240fc79ba4a49 AS final
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN --mount=type=cache,id=apt-cache-final,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-lists-final,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+ARG BUILD_IMAGE
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates tini \
       libssl3 \
       libglvnd0 libegl1 libgles2 libgl1 libgtk-3-0 libglib2.0-0 \
@@ -150,8 +66,8 @@ RUN groupadd -g 1000 appuser 2>/dev/null || true \
  && id -u 1000 >/dev/null 2>&1 || useradd -u 1000 -g 1000 -m -s /bin/bash appuser \
  && install -d -m 755 -o 1000 -g 1000 /app/danser /app/oscbot
 
-COPY --link --from=danser-builder --chown=1000:1000 --chmod=755 /out/danser /app/danser
-COPY --link --from=oscbot-builder  --chown=1000:1000 --chmod=755 /out/oscbot /app/oscbot/oscbot
+COPY --link --from=${BUILD_IMAGE} --chown=1000:1000 --chmod=755 /out/danser /app/danser
+COPY --link --from=oscbot-builder --chown=1000:1000 --chmod=755 /out/oscbot /app/oscbot/oscbot
 
 COPY --chown=1000:1000 default-danser.json /app/danser/settings/default.json
 COPY --chown=1000:1000 src/generate/data   /app/oscbot/src/generate/data
