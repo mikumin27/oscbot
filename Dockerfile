@@ -2,6 +2,8 @@ ARG CUDA_VER=12.8.0
 ARG UBUNTU_VER=24.04
 ARG BUILD_IMAGE=oscbot-build:latest
 
+FROM ${BUILD_IMAGE} AS danser-artifacts
+
 FROM rust:1.93.0-bookworm@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382 AS oscbot-builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -66,7 +68,7 @@ RUN groupadd -g 1000 appuser 2>/dev/null || true \
  && id -u 1000 >/dev/null 2>&1 || useradd -u 1000 -g 1000 -m -s /bin/bash appuser \
  && install -d -m 755 -o 1000 -g 1000 /app/danser /app/oscbot
 
-COPY --link --from=${BUILD_IMAGE} --chown=1000:1000 --chmod=755 /out/danser /app/danser
+COPY --link --from=danser-artifacts --chown=1000:1000 --chmod=755 /out/danser /app/danser
 COPY --link --from=oscbot-builder --chown=1000:1000 --chmod=755 /out/oscbot /app/oscbot/oscbot
 
 COPY --chown=1000:1000 default-danser.json /app/danser/settings/default.json
