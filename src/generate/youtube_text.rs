@@ -6,15 +6,13 @@ pub async fn generate_title_with_score(score: &rosu::Score, map: &rosu::BeatmapE
     tracing::info!("Generating title by score...");
     let username: &String = &score.user.as_ref().expect("User must exist").username.to_string();
     let mods = mods_string(&score.mods);
-    let result = huismetbenen::calculate_score_by_score(score).await;
-    generate_title(map, &username, result.star_rating, mods)
+    generate_title(map, &username, 0.0, mods)
 }
 
 pub async fn generate_title_with_replay(replay: &osu_db::Replay, map: &rosu::BeatmapExtended) -> String {
     tracing::info!("Generating title by replay...");
     let mods = osu::formatter::convert_osu_db_to_mod_array(replay.mods);
-    let result = huismetbenen::calculate_score_by_replay(&replay, map).await;
-    generate_title(map, replay.player_name.as_ref().unwrap_or(&"Unknown player".to_string()), result.star_rating, mods.join(""))
+    generate_title(map, replay.player_name.as_ref().unwrap_or(&"Unknown player".to_string()), 0.0, mods.join(""))
 }
 
 fn generate_title(map: &rosu::BeatmapExtended, username: &String, stars: f32, mods: String) -> String {
