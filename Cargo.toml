@@ -17,7 +17,7 @@ osu-db = "0.3.0"
 serde = "1.0.228"
 serde_json = "1.0.148"
 url = "2.5.7"
-futures-util = "0.3.31"
+futures-util = "0.3.32"
 dotenvy = "0.15.7"
 zip = { version = "8.0.0", default-features = false, features = ["deflate"] }
 google-youtube3 = "6.0.0+20240626"
