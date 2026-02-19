@@ -23,7 +23,7 @@ zip = { version = "8.0.0", default-features = false, features = ["deflate"] }
 google-youtube3 = "6.0.0+20240626"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
-quick-xml = "0.39.0"
+quick-xml = "0.39.1"
 anyhow = "1.0.101"
 sea-orm = { version = "2.0.0-rc.32", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "migrate"] }
