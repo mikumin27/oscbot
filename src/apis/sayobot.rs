@@ -15,5 +15,5 @@ pub async fn download_mapset(mapset_id: &u32) -> Result<Option<Vec<u8>>, Error> 
 
     let bytes = response.bytes().await?;
 
-    Ok(Some(bytes.to_vec()))
+    Ok(Some(bytes.into()))
 }
