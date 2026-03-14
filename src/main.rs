@@ -40,6 +40,11 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() {
+    // Initialize rustls crypto provider before any TLS operations
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+    
     dotenvy::dotenv().ok();
     init_logging();
     tracing::info!("starting up...");
