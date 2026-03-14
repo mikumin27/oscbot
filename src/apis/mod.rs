@@ -8,7 +8,6 @@ mod nerinyan;
 mod catboy;
 mod sayobot;
 
-pub mod huismetbenen;
 pub mod youtube;
 
 async fn push_mapset(file_name: &String, contents: Vec<u8>) -> Result<(), Error> {

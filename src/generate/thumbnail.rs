@@ -4,7 +4,7 @@ use imageproc::drawing::draw_text_mut;
 use osu_db::Replay;
 use rosu_v2::prelude::{self as rosu};
 use std::io::Cursor;
-use crate::{generate::image_binaries, apis::huismetbenen, osu};
+use crate::{generate::image_binaries, osu};
 
 const SPACE_BETWEEN_MODS: u32 = 20;
 
@@ -70,7 +70,7 @@ fn write_centered(img: &mut DynamicImage, color: &Rgba<u8>, cx: i32, cy: i32, sc
 pub async fn generate_thumbnail_from_replay_file(replay: &Replay, map: &rosu::BeatmapExtended, subtitle: &str) -> Vec<u8> {
     tracing::info!(replay_hash = replay.replay_hash, "Generating thumbnail from replay file...");
     let user = osu::get_osu_instance().user(replay.player_name.as_ref().expect("Expect a username")).await.expect("Player to exist");
-    let result = huismetbenen::calculate_score_by_replay(replay, &map).await;
+    let result = osu::pp_calculator::calculate_score_by_replay(replay, &map).await.expect("Local PP calculation to succeed");
     let mods = osu::formatter::convert_osu_db_to_mod_array(replay.mods);
     let grade = osu::formatter::calculate_grade_from_accuracy(result.accuracy, replay.count_miss > 0, mods.contains(&"HD".to_string()));
     generate_thumbnail(user, map, subtitle, Some(result.pp), result.accuracy, replay.max_combo as u32, mods, &grade).await
