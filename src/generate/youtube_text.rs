@@ -1,6 +1,6 @@
 use rosu_v2::prelude as rosu;
 
-use crate::{apis::huismetbenen, osu::{self, formatter::mods_string}};
+use crate::osu::{self, formatter::mods_string};
 
 pub async fn generate_title_with_score(score: &rosu::Score, map: &rosu::BeatmapExtended) -> String {
     tracing::info!("Generating title by score...");

@@ -14,7 +14,7 @@ pub async fn wait_open(path: &Path, timeout: Duration) -> std::io::Result<std::f
     loop {
         match tokio::fs::File::open(path).await {
             Ok(f) => return Ok(f.into_std().await),
-            Err(e) if Instant::now() < end => {
+            Err(_) if Instant::now() < end => {
                 sleep(Duration::from_millis(25)).await;
             }
             Err(e) => return Err(e),
@@ -34,9 +34,20 @@ pub async fn upload(video_path: &String, title: String, description: String, thu
     let secret = yup_oauth2::read_application_secret("youtube_secret.json").await?;
 
     // Installed-app OAuth flow (opens browser / local redirect)
-    let auth = yup_oauth2::InstalledFlowAuthenticator::builder(
+    let auth = yup_oauth2::InstalledFlowAuthenticator::with_client(
         secret,
         yup_oauth2::InstalledFlowReturnMethod::HTTPRedirect,
+        yup_oauth2::client::CustomHyperClientBuilder::from(
+            hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+                .build(
+                    hyper_rustls::HttpsConnectorBuilder::new()
+                        .with_native_roots()
+                        .unwrap()
+                        .https_or_http()
+                        .enable_http1()
+                        .build(),
+                ),
+        ),
     )
     .persist_tokens_to_disk(token_path)
     .build()
