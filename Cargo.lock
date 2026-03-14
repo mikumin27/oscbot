@@ -2863,6 +2863,7 @@ dependencies = [
  "poise",
  "quick-xml",
  "reqwest 0.13.2",
+ "rosu-pp",
  "rosu-v2",
  "rustls 0.23.37",
  "sea-orm",
@@ -3726,6 +3727,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rosu-map"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b92ea634d8b3eaa4d7fba7bd12045dda1a50ce81401c96af0d9c851b0737544"
+
+[[package]]
 name = "rosu-mods"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3733,6 +3740,16 @@ checksum = "cdc002dd5c7baef181e98980615ef27df55f35ff291c088cb37e6a339f2777e1"
 dependencies = [
  "paste",
  "serde",
+]
+
+[[package]]
+name = "rosu-pp"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46d32ddc712a7aa3f5541549cdb8a3ca050a902b654e3e15af7d29849689d14e"
+dependencies = [
+ "rosu-map",
+ "rosu-mods",
 ]
 
 [[package]]

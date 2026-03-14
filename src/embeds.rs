@@ -1,7 +1,7 @@
 use rosu_v2::prelude as rosu;
 use poise::serenity_prelude::{self as serenity, Colour, CreateEmbed};
 
-use crate::{apis::huismetbenen, osu};
+use crate::osu;
 use crate::{Context, Error};
 use crate::discord_helper::MessageState;
 
@@ -34,7 +34,7 @@ pub fn single_text_response_embed(text: &str, message_state: MessageState) -> Cr
 
 pub async fn score_embed_from_replay_file(replay: &osu_db::Replay, map: &rosu::BeatmapExtended, reason: Option<String>) -> Result<serenity::CreateEmbed, Error> {
     let user = osu::get_osu_instance().user(replay.player_name.as_ref().expect("Expect a username")).await.expect("Player to exist");
-    let result = huismetbenen::calculate_score_by_replay(replay, map).await;
+    let result = osu::pp_calculator::calculate_score_by_replay(replay, map).await?;
     let hits = format!("{}/{}/{}/{}", replay.count_300, replay.count_100, replay.count_50, replay.count_miss);
     let mods = osu::formatter::convert_osu_db_to_mod_array(replay.mods).join("");
     score_embed(map, &user, Some(replay.online_score_id), replay.score, result.accuracy, hits, replay.max_combo as u32, mods, Some(result.pp), rosu::GameMode::from(replay.mode.raw()), reason).await
