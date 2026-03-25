@@ -6,13 +6,27 @@ pub async fn generate_title_with_score(score: &rosu::Score, map: &rosu::BeatmapE
     tracing::info!("Generating title by score...");
     let username: &String = &score.user.as_ref().expect("User must exist").username.to_string();
     let mods = mods_string(&score.mods);
-    generate_title(map, &username, 0.0, mods)
+    
+    // Calculate star rating using rosu-pp
+    let stars = match osu::pp_calculator::calculate_score_by_score(score).await {
+        Ok(result) => result.star_rating,
+        Err(_) => 0.0,
+    };
+    
+    generate_title(map, &username, stars, mods)
 }
 
 pub async fn generate_title_with_replay(replay: &osu_db::Replay, map: &rosu::BeatmapExtended) -> String {
     tracing::info!("Generating title by replay...");
     let mods = osu::formatter::convert_osu_db_to_mod_array(replay.mods);
-    generate_title(map, replay.player_name.as_ref().unwrap_or(&"Unknown player".to_string()), 0.0, mods.join(""))
+    
+    // Calculate star rating using rosu-pp
+    let stars = match osu::pp_calculator::calculate_score_by_replay(replay, map).await {
+        Ok(result) => result.star_rating,
+        Err(_) => 0.0,
+    };
+    
+    generate_title(map, replay.player_name.as_ref().unwrap_or(&"Unknown player".to_string()), stars, mods.join(""))
 }
 
 fn generate_title(map: &rosu::BeatmapExtended, username: &String, stars: f32, mods: String) -> String {
