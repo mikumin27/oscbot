@@ -4,7 +4,7 @@ ARG BUILD_IMAGE=oscbot-build:latest
 
 FROM ${BUILD_IMAGE} AS danser-artifacts
 
-FROM rust:1.94.1-bookworm@sha256:fdb91abf3cb33f1ebc84a76461d2472fd8cf606df69c181050fa7474bade2895 AS oscbot-builder
+FROM rust:1.95.0-bookworm@sha256:225aa827d55fae9816a0492284592827e794a5247c6c6a961c3b471b344295ec AS oscbot-builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG OSCBOT_PROFILE=release
