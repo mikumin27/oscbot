@@ -10,6 +10,10 @@ pub struct OscWebSkin {
     #[serde(rename = "osk_url")]
     pub url_path: String,
     #[serde(default)]
+    pub skin_name: Option<String>,
+    #[serde(rename = "skin_owner_osu_id", default)]
+    pub owner_osu_id: Option<i64>,
+    #[serde(default)]
     pub matched_modifier: Option<String>,
 }
 

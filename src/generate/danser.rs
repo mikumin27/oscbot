@@ -425,6 +425,8 @@ pub async fn resolve_correct_skin(
             return Ok(Some(OscWebSkin {
                 dir_name: legacy.identifier.clone(),
                 url_path: legacy.url.clone(),
+                skin_name: None,
+                owner_osu_id: None,
                 matched_modifier: None,
             }));
         }

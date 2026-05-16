@@ -1,7 +1,7 @@
 use poise::serenity_prelude::CreateAttachment;
 use rosu_v2::prelude as rosu;
 
-use crate::{Error, apis::{self, osc_web::OscWebSkin, youtube}, discord_helper::{ContextForFunctions, MessageState}, embeds, generate::{danser, danser::DanserFailure, thumbnail, youtube_text}};
+use crate::{Error, apis::{self, osc_web::OscWebSkin, youtube}, discord_helper::{ContextForFunctions, MessageState}, embeds, generate::{danser, danser::DanserFailure, thumbnail, youtube_text}, osu::pp_calculator};
 
 pub async fn render_and_upload_by_score(
     cff: &ContextForFunctions<'_>,
@@ -14,7 +14,8 @@ pub async fn render_and_upload_by_score(
     let title = youtube_text::generate_title_with_score(&score, &map).await;
     cff.edit(embeds::render_and_upload_embed(&title, false, None, false)?, vec![]).await?;
     let thumbnail = thumbnail::generate_thumbnail_from_score(&score, &map, &subtitle.unwrap_or("".to_string())).await;
-    let description = youtube_text::generate_description(score.user_id, map.map_id, Some(&score), None);
+    let pp = pp_calculator::calculate_score_by_score(&score).await.ok().map(|r| r.pp);
+    let description = youtube_text::generate_description(score.user_id, map.map_id, Some(&score), None, pp, skin.as_ref());
 
     render_and_upload(cff, &score.id.to_string(), &map.mapset_id, &map.checksum.unwrap(), title, description, thumbnail, skin, skip_beatmap_download).await?;
     Ok(())
@@ -33,7 +34,8 @@ pub async fn render_and_upload_by_replay(
     cff.edit(embeds::render_and_upload_embed(&title, false, None, false)?, vec![]).await?;
     let timestamp = replay.timestamp.format("%d.%m.%Y at %H:%M").to_string();
     let thumbnail = thumbnail::generate_thumbnail_from_replay_file(&replay, &map, &subtitle.unwrap_or("".to_string())).await;
-    let description = youtube_text::generate_description(user.user_id, map.map_id, None, Some(timestamp));
+    let pp = pp_calculator::calculate_score_by_replay(&replay, &map).await.ok().map(|r| r.pp);
+    let description = youtube_text::generate_description(user.user_id, map.map_id, None, Some(timestamp), pp, skin.as_ref());
     render_and_upload(cff, &replay.replay_hash.unwrap(), &map.mapset_id, &map.checksum.unwrap(), title, description, thumbnail, skin, skip_beatmap_download).await?;
 
     Ok(())
