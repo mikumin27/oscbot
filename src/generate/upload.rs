@@ -1,7 +1,7 @@
 use poise::serenity_prelude::CreateAttachment;
 use rosu_v2::prelude as rosu;
 
-use crate::{Error, apis::{self, osc_web::OscWebSkin, youtube}, discord_helper::ContextForFunctions, embeds, generate::{danser, thumbnail, youtube_text}};
+use crate::{Error, apis::{self, osc_web::OscWebSkin, youtube}, discord_helper::{ContextForFunctions, MessageState}, embeds, generate::{danser, danser::DanserFailure, thumbnail, youtube_text}};
 
 pub async fn render_and_upload_by_score(
     cff: &ContextForFunctions<'_>,
@@ -60,7 +60,20 @@ pub async fn render_and_upload(
         None => true,
     };
     
-    let replay_path = danser::render(cff, &title, map_hash, replay_reference).await?;
+    let replay_path = match danser::render(cff, &title, map_hash, replay_reference).await {
+        Ok(p) => p,
+        Err(e) => {
+            let msg = e
+                .downcast_ref::<DanserFailure>()
+                .map(|f| f.user_message())
+                .unwrap_or_else(|| format!("Render failed: {e}"));
+            cff.edit(
+                embeds::single_text_response_embed(&msg, MessageState::ERROR),
+                vec![],
+            ).await?;
+            return Ok(());
+        }
+    };
     let title_too_long = title.len() > 100;
     let video_title = if title_too_long {&"temporary title please replace".to_string()} else {&title};
     let video_id = youtube::upload(&replay_path, video_title.clone(), description, thumbnail).await.unwrap();

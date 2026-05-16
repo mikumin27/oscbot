@@ -218,7 +218,6 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
     }
 
     if let Some(path) = video_path {
-        // Ensure process is reaped; ignore errors.
         if exit_status.is_none() {
             let _ = danser_terminal.wait().await;
         }
@@ -226,8 +225,6 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
         return Ok(path);
     }
 
-    // Newer danser builds don't always print "Video is available at:".
-    // If rendering succeeded, fall back to picking the latest rendered mp4.
     let output_dir = format!("{}/videos", env::var("OSC_BOT_DANSER_PATH").unwrap());
     if exit_status.map(|s| s.success()).unwrap_or(false) {
         if let Some(path) = fallback_latest_rendered_video(&output_dir, started_at) {
@@ -236,20 +233,107 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
         }
     }
 
+    let failure = classify_danser_failure(&tail);
     let status_str = exit_status
-        .map(|s| format!("exit status: {s}"))
-        .unwrap_or_else(|| "exit status: unknown".to_string());
+        .map(|s| format!("{s}"))
+        .unwrap_or_else(|| "unknown".to_string());
+    tracing::error!(
+        failure = ?failure,
+        exit_status = %status_str,
+        log_tail = ?tail,
+        "danser failed to produce a video",
+    );
+    Err(failure.into())
+}
 
-    let mut msg = String::new();
-    msg.push_str("Video could not be rendered (danser-cli did not report output path). ");
-    msg.push_str(&status_str);
-    msg.push_str(". Recent output:\n");
-    for l in tail {
-        msg.push_str(&l);
-        msg.push('\n');
+#[derive(Debug, Clone)]
+pub enum DanserFailure {
+    BeatmapNotFound,
+    NonStandardMode,
+    ReplayInvalid,
+    IncompatibleMods,
+    FfmpegMissing,
+    EncoderFailed,
+    GraphicsInit,
+    Crashed(String),
+    NoOutput,
+}
+
+impl DanserFailure {
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::BeatmapNotFound => {
+                "danser couldn't find this beatmap in osu!'s local database. \
+                 The map may be unranked, loved, or otherwise unavailable for automated download."
+                    .into()
+            }
+            Self::NonStandardMode => {
+                "Only osu!standard replays can be rendered — taiko, ctb, and mania aren't supported.".into()
+            }
+            Self::ReplayInvalid => {
+                "The replay file is invalid or missing input data — danser refused to load it.".into()
+            }
+            Self::IncompatibleMods => {
+                "This replay uses an incompatible mod combination danser refuses to render.".into()
+            }
+            Self::FfmpegMissing => {
+                "FFmpeg is missing or misconfigured inside the bot container. Ping the operator.".into()
+            }
+            Self::EncoderFailed => {
+                "The video encoder died mid-render — the bot may be out of disk space. Ping the operator.".into()
+            }
+            Self::GraphicsInit => {
+                "Graphics initialization failed inside the bot container. Ping the operator.".into()
+            }
+            Self::Crashed(detail) => {
+                format!("danser crashed unexpectedly: `{}`. Ping the operator.", detail)
+            }
+            Self::NoOutput => {
+                "danser exited without producing a video. The beatmap may be unavailable, \
+                 or the replay file may be corrupted."
+                    .into()
+            }
+        }
     }
+}
 
-    Err(msg.into())
+impl std::fmt::Display for DanserFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.user_message())
+    }
+}
+
+impl std::error::Error for DanserFailure {}
+
+fn classify_danser_failure(tail: &VecDeque<String>) -> DanserFailure {
+    for line in tail.iter().rev() {
+        if line.contains("Beatmap not found") {
+            return DanserFailure::BeatmapNotFound;
+        }
+        if line.contains("Modes other than osu!standard are not supported") {
+            return DanserFailure::NonStandardMode;
+        }
+        if line.contains("Replay is missing input data") {
+            return DanserFailure::ReplayInvalid;
+        }
+        if line.contains("Incompatible mods selected") {
+            return DanserFailure::IncompatibleMods;
+        }
+        if line.contains("ffmpeg not found") || line.contains("ffmpeg was installed incorrectly") {
+            return DanserFailure::FfmpegMissing;
+        }
+        if line.contains("ffmpeg finished abruptly") {
+            return DanserFailure::EncoderFailed;
+        }
+        if line.contains("Failed to initialize GLFW") || line.contains("Failed to initialize OpenGL") {
+            return DanserFailure::GraphicsInit;
+        }
+        if let Some((_, after)) = line.split_once("panic:") {
+            let detail: String = after.trim().chars().take(160).collect();
+            return DanserFailure::Crashed(detail);
+        }
+    }
+    DanserFailure::NoOutput
 }
 
 pub async fn attach_replay(beatmap_hash: &String, replay_reference: &String, bytes: &Vec<u8>) -> Result<(), Error> {
