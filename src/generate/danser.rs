@@ -12,7 +12,7 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use zip::ZipArchive;
 
-use tokio::{fs::{File, create_dir}, io::AsyncWriteExt};
+use tokio::{fs::{File, create_dir_all}, io::AsyncWriteExt};
 use tracing::Level;
 
 use crate::apis::osc_web::{self, OscWebSkin};
@@ -256,7 +256,10 @@ pub async fn attach_replay(beatmap_hash: &String, replay_reference: &String, byt
     let replay_path = &format!("{}/Replays/{}", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH"), beatmap_hash);
     tracing::debug!(reference = replay_reference, path = replay_path, "Attaching replay...");
     if !Path::new(replay_path).is_dir() {
-        create_dir(&replay_path).await?;
+        // create_dir_all because /app/danser/Replays may not exist —
+        // actions/upload-artifact drops empty directories during the
+        // build, so the image ships without the parent.
+        create_dir_all(&replay_path).await?;
     }
 
     let mut file = File::create(format!("{}/{}.osr", replay_path, replay_reference)).await?;

@@ -8,16 +8,13 @@ on:
       - Dockerfile
       - .dockerignore
       - default-danser.json
+      - docker/entrypoint.sh
       - src/**
+      - migrations/**
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/docker-runtime-image.yml
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - docker-build-image
-    types:
-      - completed
 
 concurrency:
   group: docker-runtime-image-${{ github.ref }}
@@ -32,142 +29,185 @@ env:
   REGISTRY: ghcr.io
   IMAGE_OWNER: mikumin27
   IMAGE_NAME: oscbot
-  BUILD_IMAGE_NAME: oscbot-build
+  DANSER_REPO: https://github.com/Wieku/danser-go.git
+  DANSER_COMMIT: 3eb75a34babb48590954deb836a585fe8174a1d5
+  FFMPEG_TAG: latest
+  FFMPEG_ASSET: ffmpeg-master-latest-linux64-gpl-shared.tar.xz
+  GO_VERSION: "1.26"
 
 jobs:
-  build:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+  build-binary:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/checkout@v6
 
-      - name: Set up Docker Buildx
-        id: buildx
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev build-essential mold
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ runner.os }}
+
+      - env:
+          RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_RELEASE_STRIP: "symbols"
+          CARGO_PROFILE_RELEASE_LTO: "thin"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+        run: cargo build --release --locked --bin oscbot
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oscbot-binary
+          path: target/release/oscbot
+          if-no-files-found: error
+          retention-days: 1
+
+  build-danser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - id: cache
+        uses: actions/cache@v5
+        with:
+          path: danser-out
+          key: danser-${{ runner.os }}-${{ env.DANSER_COMMIT }}-${{ env.FFMPEG_TAG }}-${{ env.FFMPEG_ASSET }}
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git ca-certificates curl xz-utils \
+            xorg-dev libgl1-mesa-dev libgtk-3-dev
+
+      # Compiles danser from the pinned commit, then overlays BtbN's
+      # GPL-shared ffmpeg (which has NVENC). The ffmpeg dir is flat —
+      # binaries and shared libs all sit at danser-out/ffmpeg/.
+      - if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          DANSER_REPO: ${{ env.DANSER_REPO }}
+          DANSER_COMMIT: ${{ env.DANSER_COMMIT }}
+          FFMPEG_TAG: ${{ env.FFMPEG_TAG }}
+          FFMPEG_ASSET: ${{ env.FFMPEG_ASSET }}
+        run: |
+          set -euxo pipefail
+          mkdir -p src/danser
+          git init src/danser
+          git -C src/danser remote add origin "$DANSER_REPO"
+          git -C src/danser fetch --depth 1 origin "$DANSER_COMMIT"
+          git -C src/danser checkout -q FETCH_HEAD
+
+          export GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=gcc CXX=g++
+          BUILD_DIR="$PWD/danser-out"
+          mkdir -p "$BUILD_DIR"
+          cd src/danser
+
+          go run -buildvcs=false tools/assets/assets.go ./ "$BUILD_DIR/"
+          go build -buildvcs=false -trimpath \
+            -ldflags "-s -w -X 'github.com/wieku/danser-go/build.VERSION=dev-${DANSER_COMMIT}' -X 'github.com/wieku/danser-go/build.Stream=Release'" \
+            -buildmode=c-shared -o "$BUILD_DIR/danser-core.so" \
+            -tags "exclude_cimgui_glfw exclude_cimgui_sdli"
+          mv "$BUILD_DIR/danser-core.so" "$BUILD_DIR/libdanser-core.so"
+          cp libbass.so libbass_fx.so libbassmix.so libyuv.so libSDL3.so "$BUILD_DIR/"
+          gcc -no-pie -O3 -o "$BUILD_DIR/danser-cli" -I. cmain/main_danser.c -I"$BUILD_DIR/" -Wl,-rpath,'$ORIGIN' -L"$BUILD_DIR/" -ldanser-core
+          gcc -no-pie -O3 -D LAUNCHER -o "$BUILD_DIR/danser" -I. cmain/main_danser.c -I"$BUILD_DIR/" -Wl,-rpath,'$ORIGIN' -L"$BUILD_DIR/" -ldanser-core
+          strip "$BUILD_DIR/danser" "$BUILD_DIR/danser-cli" 2>/dev/null || true
+          rm -f "$BUILD_DIR/danser-core.h"
+          cd "$GITHUB_WORKSPACE"
+
+          mkdir -p danser-out/ffmpeg
+          base="https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_TAG}"
+          curl -fSL --retry 5 --retry-connrefused --retry-delay 3 "${base}/${FFMPEG_ASSET}" -o "/tmp/${FFMPEG_ASSET}"
+          curl -fSL --retry 5 --retry-connrefused --retry-delay 3 "${base}/checksums.sha256" -o /tmp/checksums.sha256
+          grep " ${FFMPEG_ASSET}\$" /tmp/checksums.sha256 | (cd /tmp && sha256sum -c -)
+          tar -xJf "/tmp/${FFMPEG_ASSET}" -C danser-out/ffmpeg \
+            --strip-components=2 --wildcards \
+            '*/bin/ffmpeg' '*/bin/ffprobe' '*/lib/*'
+          rm -f "/tmp/${FFMPEG_ASSET}" /tmp/checksums.sha256
+
+          mkdir -p danser-out/{settings,Songs,Skins,Replays,videos}
+          chmod 755 danser-out/danser danser-out/danser-cli danser-out/ffmpeg/ffmpeg danser-out/ffmpeg/ffprobe 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: danser-out
+          path: danser-out
+          if-no-files-found: error
+          retention-days: 1
+
+  docker:
+    needs: [build-binary, build-danser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            Dockerfile
+            default-danser.json
+            docker/entrypoint.sh
+            src/generate/data
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: oscbot-binary
+          path: .
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: danser-out
+          path: danser-out
+
+      - run: chmod +x oscbot
+
+      - id: buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute tags/args
-        id: vars
+      - id: vars
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            REF_NAME="${{ github.event.workflow_run.head_branch }}"
-            FULL_SHA="${{ github.event.workflow_run.head_sha }}"
-          else
-            REF_NAME="${GITHUB_REF_NAME}"
-            FULL_SHA="${GITHUB_SHA}"
-          fi
-
-          SHA_SHORT="${FULL_SHA::7}"
+          SHA_SHORT="${REF_SHA::7}"
           IMAGE_OWNER_LC="$(echo "${IMAGE_OWNER}" | tr '[:upper:]' '[:lower:]')"
           IMAGE_NAME_LC="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
-          BUILD_IMAGE_NAME_LC="$(echo "${BUILD_IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
-
           IMAGE_REPO="${REGISTRY}/${IMAGE_OWNER_LC}/${IMAGE_NAME_LC}"
-          BUILD_IMAGE_REPO="${REGISTRY}/${IMAGE_OWNER_LC}/${BUILD_IMAGE_NAME_LC}"
-
           BRANCH_TAG="$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
-          if [ -z "$BRANCH_TAG" ]; then BRANCH_TAG="branch"; fi
-
+          [ -z "$BRANCH_TAG" ] && BRANCH_TAG="branch"
           if [ "$REF_NAME" = "main" ]; then
-            echo "runtime_tags=${IMAGE_REPO}:latest,${IMAGE_REPO}:sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-            echo "build_image_ref=${BUILD_IMAGE_REPO}:latest" >> "$GITHUB_OUTPUT"
-            echo "cache_ref_release=${IMAGE_REPO}:buildcache-rust-shared" >> "$GITHUB_OUTPUT"
+            printf 'tags=%s:latest,%s:sha-%s\n' "$IMAGE_REPO" "$IMAGE_REPO" "$SHA_SHORT" >> "$GITHUB_OUTPUT"
           else
-            echo "runtime_tags=${IMAGE_REPO}:${BRANCH_TAG},${IMAGE_REPO}:${BRANCH_TAG}-sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-            echo "build_image_ref=${BUILD_IMAGE_REPO}:latest" >> "$GITHUB_OUTPUT"
-            echo "cache_ref_release=${IMAGE_REPO}:buildcache-rust-shared" >> "$GITHUB_OUTPUT"
+            printf 'tags=%s:%s,%s:%s-sha-%s\n' "$IMAGE_REPO" "$BRANCH_TAG" "$IMAGE_REPO" "$BRANCH_TAG" "$SHA_SHORT" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Compute cache key prefix
-        id: cachevars
-        run: echo "prefix=cache-mounts-rust-v1-${{ runner.os }}-${{ hashFiles('Dockerfile','Cargo.lock','Cargo.toml','.github/workflows/docker-runtime-image.yml') }}" >> "$GITHUB_OUTPUT"
-
-      - name: Ensure cache dir exists
-        run: mkdir -p cache-mounts
-
-      - name: Restore BuildKit cache mounts (cache-dance backing store)
-        id: cache-mounts-restore
-        uses: actions/cache/restore@v5
-        with:
-          path: cache-mounts
-          key: ${{ steps.cachevars.outputs.prefix }}
-          restore-keys: |
-            ${{ steps.cachevars.outputs.prefix }}-
-            cache-mounts-rust-v1-${{ runner.os }}-
-
-      - name: Restore Rust cache mounts
-        uses: reproducible-containers/buildkit-cache-dance@v3
-        with:
-          builder: ${{ steps.buildx.outputs.name }}
-          cache-dir: cache-mounts
-          skip-extraction: true
-          dockerfile: Dockerfile
-          cache-map: |
-            {
-              "cache-mounts/apt-cache-rust": { "target": "/var/cache/apt", "id": "apt-cache-rust" },
-              "cache-mounts/apt-lists-rust": { "target": "/var/lib/apt/lists", "id": "apt-lists-rust" },
-              "cache-mounts/cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
-              "cache-mounts/cargo-git":      { "target": "/usr/local/cargo/git", "id": "cargo-git" },
-              "cache-mounts/cargo-target-release": { "target": "/app/target-release", "id": "cargo-target-release" },
-              "cache-mounts/cargo-target-debug":   { "target": "/app/target-debug",   "id": "cargo-target-debug" }
-            }
-
-      - name: Build & push runtime image (release)
-        uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@v7
         with:
           builder: ${{ steps.buildx.outputs.name }}
           context: .
           file: Dockerfile
-          build-args: |
-            BUILD_IMAGE=${{ steps.vars.outputs.build_image_ref }}
-            OSCBOT_PROFILE=release
-            OSCBOT_LTO=thin
-            OSCBOT_CODEGEN_UNITS=16
           push: true
-          tags: ${{ steps.vars.outputs.runtime_tags }}
-          cache-from: |
-            type=gha,scope=release
-            type=registry,ref=${{ steps.vars.outputs.cache_ref_release }}
-          cache-to: |
-            type=gha,mode=max,scope=release
-            type=registry,ref=${{ steps.vars.outputs.cache_ref_release }},mode=max
+          tags: ${{ steps.vars.outputs.tags }}
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
           sbom: true
           provenance: true
-
-      - name: Extract Rust cache mounts (cache-dance)
-        if: always()
-        uses: reproducible-containers/buildkit-cache-dance@v3
-        env:
-          STATE_POST: "true"
-        with:
-          builder: ${{ steps.buildx.outputs.name }}
-          cache-dir: cache-mounts
-          dockerfile: Dockerfile
-          cache-map: |
-            {
-              "cache-mounts/apt-cache-rust": { "target": "/var/cache/apt", "id": "apt-cache-rust" },
-              "cache-mounts/apt-lists-rust": { "target": "/var/lib/apt/lists", "id": "apt-lists-rust" },
-              "cache-mounts/cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
-              "cache-mounts/cargo-git":      { "target": "/usr/local/cargo/git", "id": "cargo-git" },
-              "cache-mounts/cargo-target-release": { "target": "/app/target-release", "id": "cargo-target-release" },
-              "cache-mounts/cargo-target-debug":   { "target": "/app/target-debug",   "id": "cargo-target-debug" }
-            }
-
-      - name: Save BuildKit cache mounts
-        if: always()
-        uses: actions/cache/save@v5
-        with:
-          path: cache-mounts
-          key: ${{ steps.cachevars.outputs.prefix }}-${{ github.run_id }}
