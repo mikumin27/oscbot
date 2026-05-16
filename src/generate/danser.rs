@@ -5,7 +5,6 @@ use std::env;
 use std::path::Path;
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use std::io::Write;
@@ -16,10 +15,10 @@ use zip::ZipArchive;
 use tokio::{fs::{File, create_dir}, io::AsyncWriteExt};
 use tracing::Level;
 
+use crate::apis::osc_web::{self, OscWebSkin};
 use crate::discord_helper::ContextForFunctions;
-use crate::osu::skin::DEFAULT;
 use crate::{Error, db, embeds};
-use crate::db::entities::{user, skin};
+use crate::db::entities::user;
 
 fn is_ffmpeg_progress_line(line: &str) -> bool {
     let l = line.trim_start();
@@ -324,63 +323,44 @@ pub async fn attach_skin_file(replay_reference: &String, url: &String) -> Result
     Ok(true)
 }
 
-fn get_all_mod_defaults(acronym_mods: Vec<String>) -> Vec<DEFAULT> {
-    let mut defaults: Vec<DEFAULT> = vec![];
-    let mut found = false;
-    if acronym_mods.contains(&"DT".into()) {
-        if acronym_mods.contains(&"HD".into()) {
-            defaults.push(DEFAULT::HDDT);
-        }
-        defaults.push(DEFAULT::DT);
-        found = true;
-    }
-    if acronym_mods.contains(&"HR".into()) {
-        if acronym_mods.contains(&"HD".into()) {
-            defaults.push(DEFAULT::HDHR);
-        }
-        defaults.push(DEFAULT::HR);
-        found = true;
-    }
-
-    if acronym_mods.contains(&"EZ".into()) {
-        defaults.push(DEFAULT::EZ);
-        found = true;
-    }
-
-    if acronym_mods.contains(&"HD".into()) {
-        defaults.push(DEFAULT::HD);
-        found = true;
-    }
-
-    if !found {
-        defaults.push(DEFAULT::NM);
-    }
-
-    defaults.push(DEFAULT::DEFAULT);
-    defaults
-}
-
-pub async fn resolve_correct_skin(user: Option<user::Model>, identifier: Option<String>, mods: Vec<String>) -> Result<Option<skin::Model>, Error> {
-    let skin = match user {
-        None => None,
-        Some(user) => {
-            if identifier.is_some() {
-                match db::get_skin_by_identifier(user.clone(), identifier.unwrap()).await? {
-                    Some(skin) => return Ok(Some(skin)),
-                    None => ()
-                }
-            }
-            let relevant_defaults = get_all_mod_defaults(mods);
-            let skins = skin::Entity::find().filter(skin::Column::Default.ne::<Option<String>>(None)).filter(skin::Column::User.eq::<i64>(user.id)).all(&db::get_db()).await?;
-            for relevant_default in relevant_defaults {
-                match skins.iter().filter(|skin| skin.default == relevant_default.to_db()).next() {
-                    Some(skin) => return Ok(Some(skin.clone())),
-                    _ => ()
-                }
-            }
-            return Ok(None)
-        }
+pub async fn resolve_correct_skin(
+    user: Option<user::Model>,
+    identifier: Option<String>,
+    mods: Vec<String>,
+) -> Result<Option<OscWebSkin>, Error> {
+    let user = match user {
+        None => return Ok(None),
+        Some(u) => u,
     };
 
-    Ok(skin)
+    if let Some(id) = identifier {
+        if let Some(legacy) = db::get_skin_by_identifier(user.clone(), id).await? {
+            return Ok(Some(OscWebSkin {
+                dir_name: legacy.identifier.clone(),
+                url_path: legacy.url.clone(),
+                matched_modifier: None,
+            }));
+        }
+    }
+
+    match osc_web::skin_pick(user.osu_id, &mods).await {
+        Ok(Some(pick)) => {
+            tracing::debug!(
+                osu_id = user.osu_id,
+                mods = ?mods,
+                matched = ?pick.matched_modifier,
+                dir_name = %pick.dir_name,
+                "skin pick resolved via osc-web"
+            );
+            Ok(Some(pick))
+        }
+        Ok(None) => {
+            tracing::debug!(osu_id = user.osu_id, mods = ?mods, "no skin pick in osc-web");
+            Ok(None)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "osc-web skin-pick failed; rendering without skin");
+            Ok(None)
+        }
+    }
 }

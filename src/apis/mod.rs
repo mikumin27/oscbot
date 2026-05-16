@@ -9,6 +9,7 @@ mod catboy;
 mod sayobot;
 
 pub mod youtube;
+pub mod osc_web;
 
 async fn push_mapset(file_name: &String, contents: Vec<u8>) -> Result<(), Error> {
     let osz_path = format!("{}/Songs/{}.osz", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH must exist"), file_name);

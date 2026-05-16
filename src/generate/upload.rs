@@ -1,15 +1,14 @@
 use poise::serenity_prelude::CreateAttachment;
 use rosu_v2::prelude as rosu;
 
-use crate::{Error, apis::youtube, db::entities::skin, discord_helper::ContextForFunctions, embeds, generate::{danser, thumbnail, youtube_text}};
-use crate::apis;
+use crate::{Error, apis::{self, osc_web::OscWebSkin, youtube}, discord_helper::ContextForFunctions, embeds, generate::{danser, thumbnail, youtube_text}};
 
 pub async fn render_and_upload_by_score(
     cff: &ContextForFunctions<'_>,
     score: rosu::Score,
     map: rosu::BeatmapExtended,
     subtitle: Option<String>,
-    skin: Option<skin::Model>,
+    skin: Option<OscWebSkin>,
     skip_beatmap_download: bool,
 ) -> Result<(), Error> {
     let title = youtube_text::generate_title_with_score(&score, &map).await;
@@ -27,7 +26,7 @@ pub async fn render_and_upload_by_replay(
     map: rosu::BeatmapExtended,
     user: rosu::UserExtended,
     subtitle: Option<String>,
-    skin: Option<skin::Model>,
+    skin: Option<OscWebSkin>,
     skip_beatmap_download: bool
 ) -> Result<(), Error> {
     let title = youtube_text::generate_title_with_replay(&replay, &map).await;
@@ -48,7 +47,7 @@ pub async fn render_and_upload(
     title: String,
     description: String,
     thumbnail: Vec<u8>,
-    skin: Option<skin::Model>,
+    skin: Option<OscWebSkin>,
     skip_beatmap_download: bool
 ) -> Result<(), Error> {
     if !skip_beatmap_download {
@@ -57,7 +56,7 @@ pub async fn render_and_upload(
     let replay_bytes = danser::get_replay_bytes(&replay_reference, &map_hash).await?;
     cff.edit(embeds::render_and_upload_embed(&title, true, None, false)?, vec![]).await?;
     match skin {
-        Some(skin) => danser::attach_skin_file(replay_reference, &skin.url).await?,
+        Some(skin) => danser::attach_skin_file(replay_reference, &skin.url()).await?,
         None => true,
     };
     
