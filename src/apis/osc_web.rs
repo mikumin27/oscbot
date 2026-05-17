@@ -36,6 +36,19 @@ fn bot_token() -> Result<String, Error> {
         .map_err(|_| "OSC_WEB_BOT_TOKEN env var is not set".into())
 }
 
+pub async fn fetch_osc_skin() -> Result<OscWebSkin, Error> {
+    let token = bot_token()?;
+    let url = format!("{}/api/bot/osc-skin", base_url().trim_end_matches('/'));
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await?
+        .error_for_status()?;
+    let skin: OscWebSkin = resp.json().await?;
+    Ok(skin)
+}
+
 pub async fn skin_pick(osu_id: i64, mods: &[String]) -> Result<Option<OscWebSkin>, Error> {
     let token = bot_token()?;
     let url = format!(

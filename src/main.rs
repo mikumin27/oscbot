@@ -55,6 +55,26 @@ async fn main() {
     db::init_db().await.unwrap();
     tracing::info!("db initialized!");
 
+    // Pull the OSC community skin from osc-web and install it under
+    // its own dir_name (matches default-danser.json's CurrentSkin).
+    // Replaces the prior host-mounted Skins/OSC volume; admins manage
+    // the skin via skins.sulej.net. Failures are non-fatal: danser
+    // falls back to its built-in default until the next bot start.
+    match apis::osc_web::fetch_osc_skin().await {
+        Ok(osc) => {
+            let dir = osc.dir_name.clone();
+            match generate::danser::attach_skin_file(&dir, &osc.url()).await {
+                Ok(true) => tracing::info!(dir_name = %dir, "OSC fallback skin installed"),
+                Ok(false) => tracing::warn!("OSC skin download returned empty body"),
+                Err(e) => tracing::warn!(error = %e, "failed to extract OSC skin"),
+            }
+        }
+        Err(e) => tracing::warn!(
+            error = %e,
+            "failed to fetch OSC skin from osc-web; danser will use its built-in default"
+        ),
+    }
+
     
     let token = std::env::var("OSC_BOT_DISCORD_TOKEN").expect("missing OSC_BOT_DISCORD_TOKEN");
     let intents = serenity::GatewayIntents::all();
