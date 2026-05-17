@@ -5,7 +5,6 @@ use std::env;
 use std::path::Path;
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use std::io::Write;
@@ -13,13 +12,13 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use zip::ZipArchive;
 
-use tokio::{fs::{File, create_dir}, io::AsyncWriteExt};
+use tokio::{fs::{File, create_dir_all}, io::AsyncWriteExt};
 use tracing::Level;
 
+use crate::apis::osc_web::{self, OscWebSkin};
 use crate::discord_helper::ContextForFunctions;
-use crate::osu::skin::DEFAULT;
 use crate::{Error, db, embeds};
-use crate::db::entities::{user, skin};
+use crate::db::entities::user;
 
 fn is_ffmpeg_progress_line(line: &str) -> bool {
     let l = line.trim_start();
@@ -219,7 +218,6 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
     }
 
     if let Some(path) = video_path {
-        // Ensure process is reaped; ignore errors.
         if exit_status.is_none() {
             let _ = danser_terminal.wait().await;
         }
@@ -227,8 +225,6 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
         return Ok(path);
     }
 
-    // Newer danser builds don't always print "Video is available at:".
-    // If rendering succeeded, fall back to picking the latest rendered mp4.
     let output_dir = format!("{}/videos", env::var("OSC_BOT_DANSER_PATH").unwrap());
     if exit_status.map(|s| s.success()).unwrap_or(false) {
         if let Some(path) = fallback_latest_rendered_video(&output_dir, started_at) {
@@ -237,27 +233,117 @@ pub async fn render(cff: &ContextForFunctions<'_>, title: &String, beatmap_hash:
         }
     }
 
+    let failure = classify_danser_failure(&tail);
     let status_str = exit_status
-        .map(|s| format!("exit status: {s}"))
-        .unwrap_or_else(|| "exit status: unknown".to_string());
+        .map(|s| format!("{s}"))
+        .unwrap_or_else(|| "unknown".to_string());
+    tracing::error!(
+        failure = ?failure,
+        exit_status = %status_str,
+        log_tail = ?tail,
+        "danser failed to produce a video",
+    );
+    Err(failure.into())
+}
 
-    let mut msg = String::new();
-    msg.push_str("Video could not be rendered (danser-cli did not report output path). ");
-    msg.push_str(&status_str);
-    msg.push_str(". Recent output:\n");
-    for l in tail {
-        msg.push_str(&l);
-        msg.push('\n');
+#[derive(Debug, Clone)]
+pub enum DanserFailure {
+    BeatmapNotFound,
+    NonStandardMode,
+    ReplayInvalid,
+    IncompatibleMods,
+    FfmpegMissing,
+    EncoderFailed,
+    GraphicsInit,
+    Crashed(String),
+    NoOutput,
+}
+
+impl DanserFailure {
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::BeatmapNotFound => {
+                "danser couldn't find this beatmap in osu!'s local database. \
+                 The map may be unranked, loved, or otherwise unavailable for automated download."
+                    .into()
+            }
+            Self::NonStandardMode => {
+                "Only osu!standard replays can be rendered — taiko, ctb, and mania aren't supported.".into()
+            }
+            Self::ReplayInvalid => {
+                "The replay file is invalid or missing input data — danser refused to load it.".into()
+            }
+            Self::IncompatibleMods => {
+                "This replay uses an incompatible mod combination danser refuses to render.".into()
+            }
+            Self::FfmpegMissing => {
+                "FFmpeg is missing or misconfigured inside the bot container. Ping the operator.".into()
+            }
+            Self::EncoderFailed => {
+                "The video encoder died mid-render — the bot may be out of disk space. Ping the operator.".into()
+            }
+            Self::GraphicsInit => {
+                "Graphics initialization failed inside the bot container. Ping the operator.".into()
+            }
+            Self::Crashed(detail) => {
+                format!("danser crashed unexpectedly: `{}`. Ping the operator.", detail)
+            }
+            Self::NoOutput => {
+                "danser exited without producing a video. The beatmap may be unavailable, \
+                 or the replay file may be corrupted."
+                    .into()
+            }
+        }
     }
+}
 
-    Err(msg.into())
+impl std::fmt::Display for DanserFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.user_message())
+    }
+}
+
+impl std::error::Error for DanserFailure {}
+
+fn classify_danser_failure(tail: &VecDeque<String>) -> DanserFailure {
+    for line in tail.iter().rev() {
+        if line.contains("Beatmap not found") {
+            return DanserFailure::BeatmapNotFound;
+        }
+        if line.contains("Modes other than osu!standard are not supported") {
+            return DanserFailure::NonStandardMode;
+        }
+        if line.contains("Replay is missing input data") {
+            return DanserFailure::ReplayInvalid;
+        }
+        if line.contains("Incompatible mods selected") {
+            return DanserFailure::IncompatibleMods;
+        }
+        if line.contains("ffmpeg not found") || line.contains("ffmpeg was installed incorrectly") {
+            return DanserFailure::FfmpegMissing;
+        }
+        if line.contains("ffmpeg finished abruptly") {
+            return DanserFailure::EncoderFailed;
+        }
+        if line.contains("Failed to initialize GLFW") || line.contains("Failed to initialize OpenGL") {
+            return DanserFailure::GraphicsInit;
+        }
+        if let Some((_, after)) = line.split_once("panic:") {
+            let detail: String = after.trim().chars().take(160).collect();
+            return DanserFailure::Crashed(detail);
+        }
+    }
+    DanserFailure::NoOutput
 }
 
 pub async fn attach_replay(beatmap_hash: &String, replay_reference: &String, bytes: &Vec<u8>) -> Result<(), Error> {
     let replay_path = &format!("{}/Replays/{}", env::var("OSC_BOT_DANSER_PATH").expect("OSC_BOT_DANSER_PATH"), beatmap_hash);
     tracing::debug!(reference = replay_reference, path = replay_path, "Attaching replay...");
     if !Path::new(replay_path).is_dir() {
-        create_dir(&replay_path).await?;
+        // create_dir_all because /app/danser/Replays may not exist —
+        // actions/upload-artifact drops empty directories during the
+        // build, so the image ships without the parent.
+        create_dir_all(&replay_path).await?;
     }
 
     let mut file = File::create(format!("{}/{}.osr", replay_path, replay_reference)).await?;
@@ -324,63 +410,46 @@ pub async fn attach_skin_file(replay_reference: &String, url: &String) -> Result
     Ok(true)
 }
 
-fn get_all_mod_defaults(acronym_mods: Vec<String>) -> Vec<DEFAULT> {
-    let mut defaults: Vec<DEFAULT> = vec![];
-    let mut found = false;
-    if acronym_mods.contains(&"DT".into()) {
-        if acronym_mods.contains(&"HD".into()) {
-            defaults.push(DEFAULT::HDDT);
-        }
-        defaults.push(DEFAULT::DT);
-        found = true;
-    }
-    if acronym_mods.contains(&"HR".into()) {
-        if acronym_mods.contains(&"HD".into()) {
-            defaults.push(DEFAULT::HDHR);
-        }
-        defaults.push(DEFAULT::HR);
-        found = true;
-    }
-
-    if acronym_mods.contains(&"EZ".into()) {
-        defaults.push(DEFAULT::EZ);
-        found = true;
-    }
-
-    if acronym_mods.contains(&"HD".into()) {
-        defaults.push(DEFAULT::HD);
-        found = true;
-    }
-
-    if !found {
-        defaults.push(DEFAULT::NM);
-    }
-
-    defaults.push(DEFAULT::DEFAULT);
-    defaults
-}
-
-pub async fn resolve_correct_skin(user: Option<user::Model>, identifier: Option<String>, mods: Vec<String>) -> Result<Option<skin::Model>, Error> {
-    let skin = match user {
-        None => None,
-        Some(user) => {
-            if identifier.is_some() {
-                match db::get_skin_by_identifier(user.clone(), identifier.unwrap()).await? {
-                    Some(skin) => return Ok(Some(skin)),
-                    None => ()
-                }
-            }
-            let relevant_defaults = get_all_mod_defaults(mods);
-            let skins = skin::Entity::find().filter(skin::Column::Default.ne::<Option<String>>(None)).filter(skin::Column::User.eq::<i64>(user.id)).all(&db::get_db()).await?;
-            for relevant_default in relevant_defaults {
-                match skins.iter().filter(|skin| skin.default == relevant_default.to_db()).next() {
-                    Some(skin) => return Ok(Some(skin.clone())),
-                    _ => ()
-                }
-            }
-            return Ok(None)
-        }
+pub async fn resolve_correct_skin(
+    user: Option<user::Model>,
+    identifier: Option<String>,
+    mods: Vec<String>,
+) -> Result<Option<OscWebSkin>, Error> {
+    let user = match user {
+        None => return Ok(None),
+        Some(u) => u,
     };
 
-    Ok(skin)
+    if let Some(id) = identifier {
+        if let Some(legacy) = db::get_skin_by_identifier(user.clone(), id).await? {
+            return Ok(Some(OscWebSkin {
+                dir_name: legacy.identifier.clone(),
+                url_path: legacy.url.clone(),
+                skin_name: None,
+                owner_osu_id: None,
+                matched_modifier: None,
+            }));
+        }
+    }
+
+    match osc_web::skin_pick(user.osu_id, &mods).await {
+        Ok(Some(pick)) => {
+            tracing::debug!(
+                osu_id = user.osu_id,
+                mods = ?mods,
+                matched = ?pick.matched_modifier,
+                dir_name = %pick.dir_name,
+                "skin pick resolved via osc-web"
+            );
+            Ok(Some(pick))
+        }
+        Ok(None) => {
+            tracing::debug!(osu_id = user.osu_id, mods = ?mods, "no skin pick in osc-web");
+            Ok(None)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "osc-web skin-pick failed; rendering without skin");
+            Ok(None)
+        }
+    }
 }

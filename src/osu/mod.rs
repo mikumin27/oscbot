@@ -5,7 +5,6 @@ use rosu_v2::prelude as rosu;
 use crate::{Error};
 
 pub mod formatter;
-pub mod skin;
 pub mod pp_calculator;
 
 static OSU: OnceLock<rosu::Osu> = OnceLock::new();

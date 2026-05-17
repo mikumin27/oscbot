@@ -1,14 +1,20 @@
 services:
   oscbot:
-    image: ghcr.io/ibuergis/oscbot:latest
+    image: ghcr.io/mikumin27/oscbot:latest
     container_name: oscbot
-    user: "1000:1000"
+    # The entrypoint realigns the in-container user to PUID/PGID and
+    # drops privileges via gosu — override these to your host's UID/GID
+    # (typically 1000:1000 on a single-user Linux box).
+    environment:
+      PUID: "1000"
+      PGID: "1000"
     volumes:
-      - ./danser/Songs:/app/danser/Songs
-      - ./danser/Skins:/app/danser/Skins
-      - ./danser/Replays:/app/danser/Replays
-      - ./danser/videos:/app/danser/videos
+      # All other danser working dirs (Songs/Replays/Skins/videos) live
+      # inside the container's writable layer — they're regenerated per
+      # render and don't need to survive a restart. The OSC fallback
+      # skin is fetched from skins.sulej.net at bot startup.
       - ./token.json:/app/oscbot/token.json
+      - ./app.db:/app/oscbot/app.db
       - ./youtube_secret.json:/app/oscbot/youtube_secret.json
       - ./credentials.json:/app/danser/settings/credentials.json
     env_file:

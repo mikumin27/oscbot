@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, Database, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 
-use crate::{Error, db::entities::{score, skin, user}, osu::skin::DEFAULT};
+use crate::{Error, db::entities::{score, skin, user}};
 
 static DB: OnceLock<DatabaseConnection> = OnceLock::new();
 
@@ -44,34 +44,6 @@ pub async fn get_skin_by_identifier(user: user::Model, identifier: String) -> Re
         .filter(skin::Column::User.eq::<i64>(user.id as i64))
         .filter(skin::Column::Identifier.like(format!("%{}%", identifier)))
         .one(&get_db()).await?)
-}
-
-pub async fn get_skin_by_default(user: user::Model, default: DEFAULT) -> Result<Option<skin::Model>, Error> {
-    Ok(skin::Entity::find()
-        .filter(skin::Column::User.eq::<i64>(user.id as i64))
-        .filter(skin::Column::Default.eq(default.to_db()))
-        .one(&get_db()).await?)
-}
-
-pub async fn clean_up_default(user: user::Model, default: DEFAULT) -> Result<(), Error> {
-    if default == DEFAULT::NODEFAULT {
-        return Ok(())
-    }
-    match get_skin_by_default(user, default).await? {
-        Some(skin) => {
-            let mut mutable_skin: skin::ActiveModel = skin.into();
-            mutable_skin.default = Set(None);
-            mutable_skin.update(&get_db()).await?;
-            Ok(())
-        },
-        None => Ok(())
-    }
-}
-
-pub async fn get_all_skins_by_user(user: user::Model) -> Result<Vec<skin::Model>, Error> {
-    Ok(skin::Entity::find()
-        .filter(skin::Column::User.eq::<i64>(user.id))
-        .all(&get_db()).await?)
 }
 
 pub async fn has_score(score_reference: String) -> Result<bool, Error> {

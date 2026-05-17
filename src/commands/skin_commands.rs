@@ -1,208 +1,127 @@
 use poise::{CreateReply, serenity_prelude::{self as serenity, CreateEmbed, CreateEmbedAuthor}};
 use url::Url;
 
-use crate::{Context, Error, db, discord_helper::MessageState, embeds::single_text_response, osu::{self, skin::DEFAULT}};
-use crate::discord_helper::user_has_replay_role;
-use crate::db::entities::skin;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, ModelTrait, QueryFilter};
+use crate::{Context, Error, apis::osc_web, db, discord_helper::MessageState, embeds::single_text_response, osu};
 
-async fn has_replay_role(ctx: Context<'_>) -> Result<bool, Error> {
-    if !user_has_replay_role(ctx, ctx.author()).await.unwrap() {
-        single_text_response(&ctx, "No permission L", MessageState::INFO, true).await;
-        return Ok(false);
+const OSC_WEB_HOME: &str = "https://skins.sulej.net/";
+
+fn skin_doc_url(owner_osu_id: i64, dir_name: &str) -> String {
+    let mut u = Url::parse("https://skins.sulej.net").unwrap();
+    if let Ok(mut segs) = u.path_segments_mut() {
+        segs.push("users")
+            .push(&owner_osu_id.to_string())
+            .push(dir_name);
     }
-    Ok(true)
+    u.to_string()
 }
 
-fn is_url(s: &str) -> bool {
-    Url::parse(s).is_ok()
+const PICK_MODIFIERS: &[&str] = &[
+    "DEFAULT", "NM", "HD", "DT", "HR", "EZ", "HDDT", "HDHR",
+];
+
+#[poise::command(
+    slash_command,
+    rename = "skin",
+    subcommands("set", "get"),
+    required_permissions = "SEND_MESSAGES"
+)]
+pub async fn bundle(_ctx: Context<'_>, _arg: String) -> Result<(), Error> {
+    Ok(())
 }
 
-
-#[poise::command(slash_command, rename = "skin", subcommands("set", "get", "remove"), required_permissions = "SEND_MESSAGES")]
-pub async fn bundle(_ctx: Context<'_>, _arg: String) -> Result<(), Error> { Ok(()) }
-
-/// Save a url to your skin
+/// Tell the user how to set their picks on the website.
 #[poise::command(slash_command)]
-pub async fn set(
+pub async fn set(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.defer_ephemeral().await?;
+
+    let message = format!(
+        "**Skin picking lives on the website now.**\n\
+         \n\
+         1. Open <{OSC_WEB_HOME}> and log in with osu!\n\
+         2. Browse the community and find a skin you like, on any user's profile.\n\
+         3. On the skin you want, hit the bot icon to mark it as your preferred render skin (tick one or more mod combinations).\n\
+         \n\
+         The bot will use whatever you pick the next time it renders one of your replays."
+    );
+    single_text_response(&ctx, &message, MessageState::INFO, true).await;
+    Ok(())
+}
+
+/// Show this user's current render-pick layout per mod combination.
+#[poise::command(slash_command)]
+pub async fn get(
     ctx: Context<'_>,
-    #[description = "link to your skin"] url: String,
-    #[description = "Name to reference your skin"] identifier: String,
-    #[description = "default for when you upload the gamemode. If HDDT is not set, the DT skin will be used instead."] default: osu::skin::DEFAULT,
-    #[description = "Desired member (uploaders only)"] member: Option<serenity::Member>,
+    #[description = "leave empty to show your own picks"] member: Option<serenity::Member>,
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    if member.is_some() {
-        if !user_has_replay_role(ctx.http(), ctx.author()).await? {
-            single_text_response(&ctx, "No permission L", MessageState::INFO, true).await;
-            return Ok(())
-        }
-    }
-
-    if !is_url(&url) || !url.starts_with("https://git.sulej.net/") || !url.ends_with(".osk") {
-        single_text_response(&ctx, "Please enter the download link to your skin in https://git.sulej.net/.\nHow to use: https://git.sulej.net/osc/skins/src/branch/main/how-to-use.md", MessageState::WARN, false).await;
-        return Ok(());
-    }
-
     let username = match &member {
-        Some(member) => member.display_name().to_string(),
-        None => {
-            let member = ctx.author_member().await.unwrap();
-            member.display_name().to_string()
-        }
-    };
-
-    let user_id: i64 = match &member {
-        Some(member) => member.user.id.into(),
-        None => ctx.author().id.into()
-    };
-
-    let player = match osu::get_osu_instance().user(username).await {
-        Ok(user) => user,
-        Err(_) =>  {
-            single_text_response(&ctx, "Your username is not related to your osu!account. Please inform the mods to rename you!", MessageState::WARN, false).await;
-            return Ok(())
-        }
-    };
-
-    let user = db::get_user_by_discord_id_or_create(user_id, player.user_id as i32).await?;
-
-    let skin_upload_successful = osu::skin::download(&url).await?.is_some();
-
-    if !skin_upload_successful {
-        single_text_response(&ctx, "The skin file could not be downloaded", MessageState::WARN, false).await;
-        return Ok(());
-    }
-
-    db::clean_up_default(user.clone(), default).await?;
-    match skin::Entity::find().filter(skin::Column::User.eq(user.id)).filter(skin::Column::Identifier.eq(identifier.clone())).one(&db::get_db()).await? {
-        Some(skin) => {
-            let mut active_skin: skin::ActiveModel = skin.into();
-            active_skin.url = Set(url);
-            active_skin.default = Set(default.to_db());
-            active_skin.update(&db::get_db()).await?;
+        Some(m) => m.display_name().to_string(),
+        None => match ctx.author_member().await {
+            Some(m) => m.display_name().to_string(),
+            None => ctx.author().name.clone(),
         },
-        None => {
-            skin::ActiveModel {
-                user: Set(user.id),
-                identifier: Set(identifier),
-                url: Set(url),
-                default: Set(default.to_db()),
-                ..Default::default()
-            }.insert(&db::get_db()).await?;
-        }
-        };
-
-    single_text_response(&ctx, "Skin has been saved", MessageState::SUCCESS, false).await;
-    Ok(())
-}
-
-/// Get the url to a members skins
-#[poise::command(slash_command, check = "has_replay_role")]
-pub async fn get(
-    ctx: Context<'_>,
-    #[description = "Desired member"] member: Option<serenity::Member>,
-    #[description = "leave empty for all skins"] identifier: Option<String>,
-) -> Result<(), Error> {
-    let username = match &member {
-        Some(member) => member.display_name().to_string(),
-        None => {
-            let member = ctx.author_member().await.unwrap();
-            member.display_name().to_string()
-        }
     };
-
     let user_id: i64 = match &member {
-        Some(member) => member.user.id.into(),
-        None => ctx.author().id.into()
+        Some(m) => m.user.id.into(),
+        None => ctx.author().id.into(),
     };
 
     let player = match osu::get_osu_instance().user(&username).await {
-        Ok(user) => user,
-        Err(_) =>  {
-            single_text_response(&ctx, "Your username is not related to your osu!account. Please inform the mods to rename you!", MessageState::SUCCESS, false).await;
-            return Ok(())
+        Ok(u) => u,
+        Err(_) => {
+            single_text_response(
+                &ctx,
+                "I couldn't match that Discord name to an osu! user. Make sure your Discord display name matches your osu! username.",
+                MessageState::WARN,
+                false,
+            )
+            .await;
+            return Ok(());
         }
     };
 
-    let user = db::get_user_by_discord_id_or_create(user_id, player.user_id as i32).await?;
-    
-    let skins = match identifier {
-        Some(identifier) => {
-            match db::get_skin_by_identifier(user, identifier).await? {
-                Some(skin) => vec![skin],
-                None => {
-                    single_text_response(&ctx, "This user has not a skin with that identifier", MessageState::INFO, false).await;
-                    return Ok(())
-                }
+    db::get_user_by_discord_id_or_create(user_id, player.user_id as i32).await?;
+
+    let picks = match osc_web::get_user_picks(player.user_id as i64).await {
+        Ok(p) => p,
+        Err(e) => {
+            single_text_response(
+                &ctx,
+                &format!("Couldn't reach skins.sulej.net: {}", e),
+                MessageState::WARN,
+                false,
+            )
+            .await;
+            return Ok(());
+        }
+    };
+
+    let mut lines: Vec<String> = Vec::new();
+    for slot in PICK_MODIFIERS {
+        match picks.get(*slot).and_then(|v| v.as_ref()) {
+            Some(p) if p.owner_osu_id == player.user_id as i64 => {
+                let url = skin_doc_url(p.owner_osu_id, &p.dir_name);
+                lines.push(format!("**{slot}** — [{}]({})", p.dir_name, url));
             }
-        },
-        None => {
-            db::get_all_skins_by_user(user).await?
+            Some(p) => {
+                let url = skin_doc_url(p.owner_osu_id, &p.dir_name);
+                lines.push(format!(
+                    "**{slot}** — [{}]({}) *(from osu! id {})*",
+                    p.dir_name, url, p.owner_osu_id
+                ));
+            }
+            None => lines.push(format!("**{slot}** — *(no pick)*")),
         }
-    };
-
-    if skins.is_empty() {
-        single_text_response(&ctx, "This user has not saved a skin", MessageState::INFO, false).await;
-        return Ok(());
     }
 
-    let mut embed = CreateEmbed::default().author(CreateEmbedAuthor::new(format!("Skins: {}", username)));
-    for skin in skins {
-        let default_text: String = if skin.default != DEFAULT::NODEFAULT.to_db() {format!("({})", DEFAULT::from_db(skin.default).to_string())} else {"".to_string()};
-        embed = embed.field("", format!("[{} {}]({})", skin.identifier, default_text, skin.url), false);
-    }
-
+    let embed = CreateEmbed::default()
+        .author(CreateEmbedAuthor::new(format!(
+            "{}'s render picks",
+            username
+        )))
+        .description(lines.join("\n"))
+        .url(format!("https://skins.sulej.net/users/{}/picks", player.user_id));
     ctx.send(CreateReply::default().embed(embed)).await.unwrap();
-    Ok(())
-}
-
-/// Get the url to a members skins
-#[poise::command(slash_command, check = "has_replay_role")]
-pub async fn remove(
-    ctx: Context<'_>,
-    #[description = "leave empty for all skins"] identifier: String,
-    #[description = "Desired member (uploaders only)"] member: Option<serenity::Member>,
-) -> Result<(), Error> {
-    if member.is_some() {
-        if !user_has_replay_role(ctx.http(), ctx.author()).await? {
-            single_text_response(&ctx, "No permission L", MessageState::INFO, true).await;
-            return Ok(())
-        }
-    }
-
-    let username = match &member {
-        Some(member) => member.display_name().to_string(),
-        None => {
-            let member = ctx.author_member().await.unwrap();
-            member.display_name().to_string()
-        }
-    };
-
-    let user_id: i64 = match &member {
-        Some(member) => member.user.id.into(),
-        None => ctx.author().id.into()
-    };
-
-    let player = match osu::get_osu_instance().user(&username).await {
-        Ok(user) => user,
-        Err(_) =>  {
-            single_text_response(&ctx, "Your username is not related to your osu!account. Please inform the mods to rename you!", MessageState::SUCCESS, false).await;
-            return Ok(())
-        }
-    };
-
-    let user = db::get_user_by_discord_id_or_create(user_id, player.user_id as i32).await?;
-    
-    match db::get_skin_by_identifier(user, identifier.clone()).await? {
-        Some(skin) => {
-            skin.delete(&db::get_db()).await?;
-            single_text_response(&ctx, &format!("Skin ```{}``` has been removed!", identifier), MessageState::SUCCESS, false).await;
-        },
-        None => {
-            single_text_response(&ctx, &format!("Skin ```{}``` does not exist!", identifier), MessageState::INFO, false).await
-        }
-    }
     Ok(())
 }

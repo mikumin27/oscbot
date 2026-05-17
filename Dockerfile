@@ -1,57 +1,12 @@
+# syntax=docker/dockerfile:1.7
 ARG CUDA_VER=12.8.0
 ARG UBUNTU_VER=24.04
-ARG BUILD_IMAGE=oscbot-build:latest
-
-FROM ${BUILD_IMAGE} AS danser-artifacts
-
-FROM rust:1.94.1-bookworm@sha256:fdb91abf3cb33f1ebc84a76461d2472fd8cf606df69c181050fa7474bade2895 AS oscbot-builder
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-ARG OSCBOT_PROFILE=release
-ARG OSCBOT_LTO=thin
-ARG OSCBOT_CODEGEN_UNITS=16
-ARG OSCBOT_INCREMENTAL=0
-
-ENV CARGO_PROFILE_RELEASE_STRIP=symbols \
-    CARGO_PROFILE_RELEASE_LTO=${OSCBOT_LTO} \
-    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=${OSCBOT_CODEGEN_UNITS} \
-    CARGO_INCREMENTAL=${OSCBOT_INCREMENTAL}
-
-RUN --mount=type=cache,id=apt-cache-rust,target=/var/cache/apt,sharing=locked \
-  --mount=type=cache,id=apt-lists-rust,target=/var/lib/apt/lists,sharing=locked \
-  apt-get update && apt-get install -y --no-install-recommends \
-      pkg-config libssl-dev ca-certificates build-essential mold
-
-ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
-WORKDIR /app
-
-COPY Cargo.toml Cargo.lock ./
-COPY migrations ./migrations
-COPY src ./src
-
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=cargo-target-release,target=/app/target-release \
-    --mount=type=cache,id=cargo-target-debug,target=/app/target-debug \
-    set -eux; \
-    mkdir -p /out; \
-    if [ "${OSCBOT_PROFILE}" = "release" ]; then \
-      export CARGO_TARGET_DIR=/app/target-release; \
-      cargo build --release --locked; \
-      cp /app/target-release/release/oscbot /out/oscbot; \
-    else \
-      export CARGO_TARGET_DIR=/app/target-debug; \
-      cargo build --locked; \
-      cp /app/target-debug/debug/oscbot /out/oscbot; \
-    fi
 
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}@sha256:44e43f0e0bcca1fc6fdc775e6002c67834bf78d39eb1fd76825240fc79ba4a49 AS final
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ARG BUILD_IMAGE
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates tini \
+      ca-certificates tini gosu \
       libssl3 \
       libglvnd0 libegl1 libgles2 libgl1 libgtk-3-0 libglib2.0-0 \
     && apt-get clean
@@ -64,22 +19,22 @@ RUN install -d -m 755 /etc/glvnd/egl_vendor.d \
 }
 EOF
 
-RUN groupadd -g 1000 appuser 2>/dev/null || true \
- && id -u 1000 >/dev/null 2>&1 || useradd -u 1000 -g 1000 -m -s /bin/bash appuser \
- && install -d -m 755 -o 1000 -g 1000 /app/danser /app/oscbot
+RUN install -d -m 755 \
+      /app/danser /app/oscbot \
+      /app/danser/Replays /app/danser/Songs /app/danser/Skins /app/danser/videos
 
-COPY --link --from=danser-artifacts --chown=1000:1000 --chmod=755 /out/danser /app/danser
-COPY --link --from=oscbot-builder --chown=1000:1000 --chmod=755 /out/oscbot /app/oscbot/oscbot
+COPY --link --chmod=755 danser-out          /app/danser
+COPY --link --chmod=755 oscbot              /app/oscbot/oscbot
+COPY --chmod=755        docker/entrypoint.sh /app/oscbot/entrypoint.sh
 
-COPY --chown=1000:1000 default-danser.json /app/danser/settings/default.json
-COPY --chown=1000:1000 src/generate/data   /app/oscbot/src/generate/data
+COPY default-danser.json /app/danser/settings/default.json
+COPY src/generate/data   /app/oscbot/src/generate/data
 
-RUN printf "%s\n" /app/danser /app/danser/ffmpeg/lib >/etc/ld.so.conf.d/app-danser.conf \
+RUN printf "%s\n" /app/danser /app/danser/ffmpeg >/etc/ld.so.conf.d/app-danser.conf \
  && ldconfig
 
-ENV PATH="/app/danser/ffmpeg/bin:${PATH}"
+ENV PATH="/app/danser/ffmpeg:${PATH}"
 ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
-USER 1000:1000
 WORKDIR /app/oscbot
-ENTRYPOINT ["tini","--","/app/oscbot/oscbot"]
+ENTRYPOINT ["tini","--","/app/oscbot/entrypoint.sh"]

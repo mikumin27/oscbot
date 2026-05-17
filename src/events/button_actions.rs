@@ -159,7 +159,8 @@ async fn get_score_metadata_by_replay(ctx: &serenity::Context, component: &seren
 
     let timestamp = replay.timestamp.format("%d.%m.%Y at %H:%M").to_string();
     let title = youtube_text::generate_title_with_replay(&replay, &map).await;
-    let description = youtube_text::generate_description(user.user_id, map.map_id, None, Some(timestamp));
+    let pp = osu::pp_calculator::calculate_score_by_replay(&replay, &map).await.ok().map(|r| r.pp);
+    let description = youtube_text::generate_description(user.user_id, map.map_id, None, Some(timestamp), pp, None);
     let thumbnail = thumbnail::generate_thumbnail_from_replay_file(&replay, &map, &"".to_string()).await;
     
     component.edit_response(ctx,serenity::EditInteractionResponse::default()
@@ -180,7 +181,8 @@ async fn get_score_metadata_by_score(ctx: &serenity::Context, component: &sereni
     
 
     let title = youtube_text::generate_title_with_score(&score, &map).await;
-    let description = youtube_text::generate_description(score.user_id, map.map_id, Some(&score), None);
+    let pp = osu::pp_calculator::calculate_score_by_score(&score).await.ok().map(|r| r.pp);
+    let description = youtube_text::generate_description(score.user_id, map.map_id, Some(&score), None, pp, None);
     let thumbnail = thumbnail::generate_thumbnail_from_score(&score, &map, &"".to_string()).await;
     
     component.edit_response(ctx,serenity::EditInteractionResponse::default()

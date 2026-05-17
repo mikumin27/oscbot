@@ -1,31 +1,30 @@
 use rosu_v2::prelude as rosu;
 
+use crate::apis::osc_web::OscWebSkin;
 use crate::osu::{self, formatter::mods_string};
 
 pub async fn generate_title_with_score(score: &rosu::Score, map: &rosu::BeatmapExtended) -> String {
     tracing::info!("Generating title by score...");
     let username: &String = &score.user.as_ref().expect("User must exist").username.to_string();
     let mods = mods_string(&score.mods);
-    
-    // Calculate star rating using rosu-pp
+
     let stars = match osu::pp_calculator::calculate_score_by_score(score).await {
         Ok(result) => result.star_rating,
         Err(_) => 0.0,
     };
-    
+
     generate_title(map, &username, stars, mods)
 }
 
 pub async fn generate_title_with_replay(replay: &osu_db::Replay, map: &rosu::BeatmapExtended) -> String {
     tracing::info!("Generating title by replay...");
     let mods = osu::formatter::convert_osu_db_to_mod_array(replay.mods);
-    
-    // Calculate star rating using rosu-pp
+
     let stars = match osu::pp_calculator::calculate_score_by_replay(replay, map).await {
         Ok(result) => result.star_rating,
         Err(_) => 0.0,
     };
-    
+
     generate_title(map, replay.player_name.as_ref().unwrap_or(&"Unknown player".to_string()), stars, mods.join(""))
 }
 
@@ -41,7 +40,14 @@ fn generate_title(map: &rosu::BeatmapExtended, username: &String, stars: f32, mo
     title
 }
 
-pub fn generate_description(userid: u32, mapid: u32, score: Option<&rosu::Score>, time_string: Option<String>) -> String {
+pub fn generate_description(
+    userid: u32,
+    mapid: u32,
+    score: Option<&rosu::Score>,
+    time_string: Option<String>,
+    pp: Option<f32>,
+    skin: Option<&OscWebSkin>,
+) -> String {
     tracing::info!("Generating description");
     let fmt = time::format_description::parse("[day].[month].[year] at [hour]:[minute]").unwrap();
     let timestamp = match time_string {
@@ -51,17 +57,45 @@ pub fn generate_description(userid: u32, mapid: u32, score: Option<&rosu::Score>
 
     let score_link = match score {
         Some(score) => format!("Score: https://osu.ppy.sh/scores/{}", score.id),
-        None => "\nScore was rendered by a replay file".to_string(),
+        None => "Score was rendered by a replay file".to_string(),
     };
 
-    let description = format!("
-This score was set on {}.
+    let skin_line = match skin.and_then(|s| s.owner_osu_id.map(|o| (o, s))) {
+        Some((owner_id, s)) => {
+            let label = s.skin_name.clone().unwrap_or_else(|| s.dir_name.clone());
+            // osu_id=0 is the OSC community skin; it lives at its own
+            // route on the website rather than a user profile.
+            let url = if owner_id == 0 {
+                "https://skins.sulej.net/osc-skins".to_string()
+            } else {
+                format!("https://skins.sulej.net/users/{}", owner_id)
+            };
+            format!("\nSkin: {} ({})", url, label)
+        }
+        None => String::new(),
+    };
+
+    let mut tags = vec![format!("#osc_{}", userid)];
+    if let Some(pp_value) = pp {
+        let bucket = (pp_value as i64 / 100) * 100;
+        if bucket >= 100 {
+            tags.push(format!("#osc_{}pp", bucket));
+        }
+    }
+    let hashtags = tags.join(" ");
+
+    let description = format!(
+"This score was set on {}.
 
 Player: https://osu.ppy.sh/users/{}
 Beatmap: https://osu.ppy.sh/beatmaps/{}
-{}
+{}{}
 
-Join the osu swiss community in discord: https://discord.com/invite/SHz8QtD", timestamp, userid, mapid, score_link);
+Join the osu swiss community in discord: https://discord.com/invite/SHz8QtD
+
+{}",
+        timestamp, userid, mapid, score_link, skin_line, hashtags,
+    );
     tracing::info!("Description has been generated successfully");
     description
 }

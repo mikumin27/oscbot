@@ -97,7 +97,8 @@ pub async fn title_and_description(
         };
         let map = osu::get_osu_instance().beatmap().map_id(score.map_id).await.expect("Beatmap exists");
         let title = youtube_text::generate_title_with_score(&score, &map).await;
-        let description = youtube_text::generate_description(score.user_id, score.map_id, Some(&score), None);
+        let pp = osu::pp_calculator::calculate_score_by_score(&score).await.ok().map(|r| r.pp);
+        let description = youtube_text::generate_description(score.user_id, score.map_id, Some(&score), None, pp, None);
         ctx.say(format!("```{}``````{}```", title, description)).await?;
     }
     else if scorefile.is_some() {
@@ -120,7 +121,8 @@ pub async fn title_and_description(
             },
         };
         let title = youtube_text::generate_title_with_replay(&replay, &map).await;
-        let description = youtube_text::generate_description(user.user_id, map.map_id, None, Some(timestamp));
+        let pp = osu::pp_calculator::calculate_score_by_replay(&replay, &map).await.ok().map(|r| r.pp);
+        let description = youtube_text::generate_description(user.user_id, map.map_id, None, Some(timestamp), pp, None);
 
         ctx.say(format!("```{}``````{}```", title, description)).await?;
     }
