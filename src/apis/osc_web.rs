@@ -52,7 +52,7 @@ pub async fn fetch_osc_skin() -> Result<OscWebSkin, Error> {
 pub async fn skin_pick(osu_id: i64, mods: &[String]) -> Result<Option<OscWebSkin>, Error> {
     let token = bot_token()?;
     let url = format!(
-        "{}/api/bot/skin-pick?osu_id={}&mods={}",
+        "{}/api/bot/users/{}/picks/resolve?mods={}",
         base_url().trim_end_matches('/'),
         osu_id,
         mods.join(","),
