@@ -5,12 +5,17 @@ use crate::{Context, Error, apis::osc_web, db, discord_helper::MessageState, emb
 
 const OSC_WEB_HOME: &str = "https://skins.sulej.net/";
 
-fn skin_doc_url(owner_osu_id: i64, dir_name: &str) -> String {
+fn skin_doc_url(pick: &osc_web::PickEntry) -> String {
     let mut u = Url::parse("https://skins.sulej.net").unwrap();
     if let Ok(mut segs) = u.path_segments_mut() {
-        segs.push("users")
-            .push(&owner_osu_id.to_string())
-            .push(dir_name);
+        if pick.is_community() {
+            // The community skin lives at its own route, not a user profile.
+            segs.push("osc-skins").push(&pick.dir_name);
+        } else {
+            segs.push("users")
+                .push(&pick.owner_osu_id.unwrap_or(0).to_string())
+                .push(&pick.dir_name);
+        }
     }
     u.to_string()
 }
@@ -100,15 +105,19 @@ pub async fn get(
     let mut lines: Vec<String> = Vec::new();
     for slot in PICK_MODIFIERS {
         match picks.get(*slot).and_then(|v| v.as_ref()) {
-            Some(p) if p.owner_osu_id == player.user_id as i64 => {
-                let url = skin_doc_url(p.owner_osu_id, &p.dir_name);
+            // Own picks and the community skin render plain (name + link); only
+            // cross-user picks get a "from osu! id …" attribution.
+            Some(p) if p.is_community() || p.owner_osu_id == Some(player.user_id as i64) => {
+                let url = skin_doc_url(p);
                 lines.push(format!("**{slot}** — [{}]({})", p.dir_name, url));
             }
             Some(p) => {
-                let url = skin_doc_url(p.owner_osu_id, &p.dir_name);
+                let url = skin_doc_url(p);
                 lines.push(format!(
                     "**{slot}** — [{}]({}) *(from osu! id {})*",
-                    p.dir_name, url, p.owner_osu_id
+                    p.dir_name,
+                    url,
+                    p.owner_osu_id.unwrap_or(0)
                 ));
             }
             None => lines.push(format!("**{slot}** — *(no pick)*")),
