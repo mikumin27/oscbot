@@ -60,15 +60,16 @@ pub fn generate_description(
         None => "Score was rendered by a replay file".to_string(),
     };
 
-    let skin_line = match skin.and_then(|s| s.owner_osu_id.map(|o| (o, s))) {
-        Some((owner_id, s)) => {
+    let skin_line = match skin {
+        Some(s) => {
             let label = s.skin_name.clone().unwrap_or_else(|| s.dir_name.clone());
-            // osu_id=0 is the OSC community skin; it lives at its own
-            // route on the website rather than a user profile.
-            let url = if owner_id == 0 {
+            // The OSC community skin lives at its own route, not a user profile.
+            let url = if s.is_community() {
                 "https://skins.sulej.net/osc-skins".to_string()
-            } else {
+            } else if let Some(owner_id) = s.owner_osu_id {
                 format!("https://skins.sulej.net/users/{}", owner_id)
+            } else {
+                "https://skins.sulej.net".to_string()
             };
             format!("\nSkin: {} ({})", url, label)
         }

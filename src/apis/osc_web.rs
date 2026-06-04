@@ -13,11 +13,20 @@ pub struct OscWebSkin {
     pub skin_name: Option<String>,
     #[serde(rename = "skin_owner_osu_id", default)]
     pub owner_osu_id: Option<i64>,
+    /// `"user"` or `"community"`. Absent on the pre-re-model API → treated as a
+    /// user pick (with `owner_osu_id`).
+    #[serde(rename = "skin_owner_kind", default)]
+    pub owner_kind: Option<String>,
     #[serde(default)]
     pub matched_modifier: Option<String>,
 }
 
 impl OscWebSkin {
+    /// Whether this skin is the OSC community skin (vs a member's repo).
+    pub fn is_community(&self) -> bool {
+        self.owner_kind.as_deref() == Some("community")
+    }
+
     pub fn url(&self) -> String {
         if self.url_path.starts_with("http://") || self.url_path.starts_with("https://") {
             return self.url_path.clone();
@@ -73,8 +82,18 @@ pub async fn skin_pick(osu_id: i64, mods: &[String]) -> Result<Option<OscWebSkin
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PickEntry {
-    pub owner_osu_id: i64,
+    /// None for community picks (and on the pre-re-model API it's always set).
+    #[serde(default)]
+    pub owner_osu_id: Option<i64>,
+    #[serde(default)]
+    pub owner_kind: Option<String>,
     pub dir_name: String,
+}
+
+impl PickEntry {
+    pub fn is_community(&self) -> bool {
+        self.owner_kind.as_deref() == Some("community")
+    }
 }
 
 pub async fn get_user_picks(

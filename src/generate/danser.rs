@@ -427,6 +427,7 @@ pub async fn resolve_correct_skin(
                 url_path: legacy.url.clone(),
                 skin_name: None,
                 owner_osu_id: None,
+                owner_kind: None,
                 matched_modifier: None,
             }));
         }
