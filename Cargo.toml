@@ -9,7 +9,7 @@ tokio = {version = "1.52.3", features = ["macros", "rt-multi-thread", "process"]
 rosu-v2 = {version = "0.11.0", features = ["cache", "macros", "replay"]}
 rosu-pp = "4.0.1"
 image = "0.25.9"
-imageproc = "0.26.2"
+imageproc = "0.27.0"
 reqwest = { version = "0.13.4", features = ["blocking", "native-tls", "json"] }
 ab_glyph = "0.2.32"
 firebase-rs = "2.2.3"
