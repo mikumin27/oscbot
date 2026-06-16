@@ -58,6 +58,10 @@ pub async fn render_and_upload(
     let replay_bytes = danser::get_replay_bytes(&replay_reference, &map_hash).await?;
     cff.edit(embeds::render_and_upload_embed(&title, true, None, false)?, vec![]).await?;
     match skin {
+        // The community skin is danser's installed default, so a no-pick fallback
+        // to it (no matched_modifier) renders without a per-render download — it
+        // still appears in the description. Explicit picks fetch into Skins/<ref>.
+        Some(ref s) if s.is_community() && s.matched_modifier.is_none() => true,
         Some(skin) => danser::attach_skin_file(replay_reference, &skin.url()).await?,
         None => true,
     };
