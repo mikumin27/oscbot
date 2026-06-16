@@ -63,15 +63,7 @@ pub fn generate_description(
     let skin_line = match skin {
         Some(s) => {
             let label = s.skin_name.clone().unwrap_or_else(|| s.dir_name.clone());
-            // The OSC community skin lives at its own route, not a user profile.
-            let url = if s.is_community() {
-                "https://skins.sulej.net/osc-skins".to_string()
-            } else if let Some(owner_id) = s.owner_osu_id {
-                format!("https://skins.sulej.net/users/{}", owner_id)
-            } else {
-                "https://skins.sulej.net".to_string()
-            };
-            format!("\nSkin: {} ({})", url, label)
+            format!("\nSkin: {} ({})", s.doc_url(), label)
         }
         None => String::new(),
     };
