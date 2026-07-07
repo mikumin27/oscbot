@@ -36,7 +36,8 @@ impl OscWebSkin {
     }
 
     /// Frontend page for this skin: the community collection detail
-    /// (`/osc-skins/{dir}`) or the owner's profile skin (`/users/{id}/{dir}`).
+    /// (`/community/osc/skins/{dir}`) or the owner's profile skin
+    /// (`/users/{id}/{dir}`).
     /// `dir_name` is pushed as a path segment so spaces, `+`, and unicode are
     /// percent-encoded.
     pub fn doc_url(&self) -> String {
@@ -44,7 +45,7 @@ impl OscWebSkin {
             .unwrap_or_else(|_| Url::parse("https://skins.sulej.net").unwrap());
         if let Ok(mut segs) = u.path_segments_mut() {
             if self.is_community() {
-                segs.push("osc-skins").push(&self.dir_name);
+                segs.push("community").push("osc").push("skins").push(&self.dir_name);
             } else if let Some(id) = self.owner_osu_id {
                 segs.push("users").push(&id.to_string()).push(&self.dir_name);
             }
