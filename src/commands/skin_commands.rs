@@ -3,14 +3,14 @@ use url::Url;
 
 use crate::{Context, Error, apis::osc_web, db, discord_helper::MessageState, embeds::single_text_response, osu};
 
-const OSC_WEB_HOME: &str = "https://skins.sulej.net/";
+const OSC_WEB_HOME: &str = "https://skins.sulej.net/community/osc";
 
 fn skin_doc_url(pick: &osc_web::PickEntry) -> String {
     let mut u = Url::parse("https://skins.sulej.net").unwrap();
     if let Ok(mut segs) = u.path_segments_mut() {
         if pick.is_community() {
             // The community skin lives at its own route, not a user profile.
-            segs.push("osc-skins").push(&pick.dir_name);
+            segs.push("community").push("osc").push("skins").push(&pick.dir_name);
         } else {
             segs.push("users")
                 .push(&pick.owner_osu_id.unwrap_or(0).to_string())

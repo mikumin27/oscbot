@@ -393,12 +393,12 @@ pub async fn cleanup_files(beatmap_hash: &String, replay_reference: &String, vid
 pub async fn attach_skin_file(replay_reference: &String, url: &String) -> Result<bool, Error> {
     let path = &format!("{}/Skins/{}", env::var("OSC_BOT_DANSER_PATH").unwrap(), replay_reference);
     remove_dir_all(path).ok();
-    let client = reqwest::Client::new();
-    let resp = client.get(url).send().await?.error_for_status()?;
-
-    let bytes = match resp.bytes().await {
-        Ok(bytes) => bytes,
-        Err(_) =>  return Ok(false)
+    // osc-web media needs the bot token now (URLs aren't pre-signed); download_bytes
+    // attaches it for our base URL and fetches legacy/external URLs plain.
+    let bytes = match osc_web::download_bytes(url).await {
+        Ok(bytes) if !bytes.is_empty() => bytes,
+        Ok(_) => return Ok(false),
+        Err(e) => return Err(e),
     };
 
     tracing::debug!(url = url, "Skin has been downloaded successfully");
@@ -445,12 +445,25 @@ pub async fn resolve_correct_skin(
             Ok(Some(pick))
         }
         Ok(None) => {
-            tracing::debug!(osu_id = user.osu_id, mods = ?mods, "no skin pick in osc-web");
-            Ok(None)
+            tracing::debug!(osu_id = user.osu_id, mods = ?mods, "no skin pick; using OSC community skin");
+            Ok(community_fallback_skin().await)
         }
         Err(e) => {
-            tracing::warn!(error = %e, "osc-web skin-pick failed; rendering without skin");
-            Ok(None)
+            tracing::warn!(error = %e, "osc-web skin-pick failed; using OSC community skin");
+            Ok(community_fallback_skin().await)
+        }
+    }
+}
+
+/// The OSC community skin, returned when a player has no matching pick so the
+/// upload description links it. It is already danser's installed default, so
+/// `render_and_upload` skips the per-render download for this fallback.
+async fn community_fallback_skin() -> Option<OscWebSkin> {
+    match osc_web::fetch_osc_skin().await {
+        Ok(skin) => Some(skin),
+        Err(e) => {
+            tracing::warn!(error = %e, "couldn't fetch OSC community skin for fallback");
+            None
         }
     }
 }
