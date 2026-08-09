@@ -79,7 +79,7 @@ jobs:
           key: danser-${{ runner.os }}-${{ env.DANSER_COMMIT }}-${{ env.FFMPEG_TAG }}-${{ env.FFMPEG_ASSET }}
 
       - if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
