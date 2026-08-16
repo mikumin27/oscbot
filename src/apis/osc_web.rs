@@ -171,7 +171,7 @@ pub async fn skin_pick(osu_id: i64, mods: &[String]) -> Result<Option<OscWebSkin
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PickEntry {
-    /// None for community picks.
+    /// The member's osu id, or a community collection's negative owner id.
     #[serde(default)]
     pub owner_osu_id: Option<i64>,
     #[serde(default)]
@@ -185,20 +185,20 @@ impl PickEntry {
     }
 
     /// Absolute osk download URL on osc-web (ref omitted → the server resolves the
-    /// owner's latest tag). `dir_name` is pushed as a path segment so spaces, `+`,
-    /// and unicode are percent-encoded.
+    /// owner's latest tag). Community collections are owned by their negative
+    /// `owner_osu_id`, so every pick downloads through the same per-owner route.
+    /// `dir_name` is pushed as a path segment so spaces, `+`, and unicode are
+    /// percent-encoded.
     fn osk_url(&self) -> String {
         let mut u = Url::parse(&base_url())
             .unwrap_or_else(|_| Url::parse("https://skins.sulej.net").unwrap());
         if let Ok(mut segs) = u.path_segments_mut() {
-            segs.push("api");
-            if self.is_community() {
-                segs.push("community").push("osc");
-            } else {
-                segs.push("users")
-                    .push(&self.owner_osu_id.unwrap_or(0).to_string());
-            }
-            segs.push("media").push("osk").push(&self.dir_name);
+            segs.push("api")
+                .push("users")
+                .push(&self.owner_osu_id.unwrap_or(0).to_string())
+                .push("media")
+                .push("osk")
+                .push(&self.dir_name);
         }
         u.to_string()
     }
