@@ -30,10 +30,9 @@ COPY --chmod=755        docker/entrypoint.sh /app/oscbot/entrypoint.sh
 COPY default-danser.json /app/danser/settings/default.json
 COPY src/generate/data   /app/oscbot/src/generate/data
 
-RUN printf "%s\n" /app/danser /app/danser/ffmpeg >/etc/ld.so.conf.d/app-danser.conf \
+RUN printf "%s\n" /app/danser >/etc/ld.so.conf.d/app-danser.conf \
  && ldconfig
 
-ENV PATH="/app/danser/ffmpeg:${PATH}"
 ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 WORKDIR /app/oscbot
