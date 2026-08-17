@@ -32,7 +32,7 @@ env:
   DANSER_REPO: https://github.com/Wieku/danser-go.git
   DANSER_COMMIT: 3eb75a34babb48590954deb836a585fe8174a1d5
   FFMPEG_TAG: latest
-  FFMPEG_ASSET: ffmpeg-master-latest-linux64-gpl-shared.tar.xz
+  FFMPEG_ASSET: ffmpeg-n8.1-latest-linux64-gpl-shared-8.1.tar.xz
   GO_VERSION: "1.26"
 
 jobs:
