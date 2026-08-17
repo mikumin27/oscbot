@@ -31,8 +31,6 @@ env:
   IMAGE_NAME: oscbot
   DANSER_REPO: https://github.com/Wieku/danser-go.git
   DANSER_COMMIT: 3eb75a34babb48590954deb836a585fe8174a1d5
-  FFMPEG_TAG: latest
-  FFMPEG_ASSET: ffmpeg-n8.1-latest-linux64-gpl-shared-8.1.tar.xz
   GO_VERSION: "1.26"
 
 jobs:
@@ -76,7 +74,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: danser-out
-          key: danser-${{ runner.os }}-${{ env.DANSER_COMMIT }}-${{ env.FFMPEG_TAG }}-${{ env.FFMPEG_ASSET }}
+          key: danser-${{ runner.os }}-${{ env.DANSER_COMMIT }}-danser-ffmpeg
 
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/setup-go@v7
@@ -88,18 +86,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            git ca-certificates curl xz-utils \
+            git ca-certificates \
             xorg-dev libgl1-mesa-dev libgtk-3-dev
 
-      # Compiles danser from the pinned commit, then overlays BtbN's
-      # GPL-shared ffmpeg (which has NVENC). The ffmpeg dir is flat —
-      # binaries and shared libs all sit at danser-out/ffmpeg/.
+      # Compiles danser from the pinned commit, then fetches the ffmpeg
+      # danser is developed against (Wieku/FFmpeg-Builds via its own
+      # tools/ffmpeg) into danser-out/ffmpeg/{bin,lib}.
       - if: steps.cache.outputs.cache-hit != 'true'
         env:
           DANSER_REPO: ${{ env.DANSER_REPO }}
           DANSER_COMMIT: ${{ env.DANSER_COMMIT }}
-          FFMPEG_TAG: ${{ env.FFMPEG_TAG }}
-          FFMPEG_ASSET: ${{ env.FFMPEG_ASSET }}
         run: |
           set -euxo pipefail
           mkdir -p src/danser
@@ -126,18 +122,10 @@ jobs:
           rm -f "$BUILD_DIR/danser-core.h"
           cd "$GITHUB_WORKSPACE"
 
-          mkdir -p danser-out/ffmpeg
-          base="https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_TAG}"
-          curl -fSL --retry 5 --retry-connrefused --retry-delay 3 "${base}/${FFMPEG_ASSET}" -o "/tmp/${FFMPEG_ASSET}"
-          curl -fSL --retry 5 --retry-connrefused --retry-delay 3 "${base}/checksums.sha256" -o /tmp/checksums.sha256
-          grep " ${FFMPEG_ASSET}\$" /tmp/checksums.sha256 | (cd /tmp && sha256sum -c -)
-          tar -xJf "/tmp/${FFMPEG_ASSET}" -C danser-out/ffmpeg \
-            --strip-components=2 --wildcards \
-            '*/bin/ffmpeg' '*/bin/ffprobe' '*/lib/*'
-          rm -f "/tmp/${FFMPEG_ASSET}" /tmp/checksums.sha256
+          (cd src/danser && go run tools/ffmpeg/ffmpeg.go "$BUILD_DIR/")
 
           mkdir -p danser-out/{settings,Songs,Skins,Replays,videos}
-          chmod 755 danser-out/danser danser-out/danser-cli danser-out/ffmpeg/ffmpeg danser-out/ffmpeg/ffprobe 2>/dev/null || true
+          chmod 755 danser-out/danser danser-out/danser-cli danser-out/ffmpeg/bin/* 2>/dev/null || true
 
       - uses: actions/upload-artifact@v7
         with:
