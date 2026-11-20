@@ -5,6 +5,8 @@ services:
     # The entrypoint realigns the in-container user to PUID/PGID and
     # drops privileges via gosu — override these to your host's UID/GID
     # (typically 1000:1000 on a single-user Linux box).
+    # Or run without root at all: replace PUID/PGID with
+    # `user: "1000:1000"` and own the mounted files by that uid.
     environment:
       PUID: "1000"
       PGID: "1000"

@@ -33,6 +33,14 @@ COPY src/generate/data   /app/oscbot/src/generate/data
 RUN printf "%s\n" /app/danser >/etc/ld.so.conf.d/app-danser.conf \
  && ldconfig
 
+# Non-root mode (`user:` in compose) runs as an arbitrary uid, so the dirs the bot
+# and danser write to (sqlite db + journal, token.json, downloaded maps/skins,
+# rendered videos, settings) are sticky world-writable like /tmp. Only the
+# container's own process runs in here.
+RUN chmod 1777 /app/oscbot /app/danser /app/danser/settings \
+      /app/danser/Replays /app/danser/Songs /app/danser/Skins /app/danser/videos \
+ && chmod 666 /app/danser/settings/default.json
+
 ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 WORKDIR /app/oscbot
