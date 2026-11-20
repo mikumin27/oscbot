@@ -2,8 +2,18 @@ name: docker-runtime-image
 
 on:
   push:
-    branches:
-      - "**"
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - default-danser.json
+      - docker/entrypoint.sh
+      - src/**
+      - migrations/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/docker-runtime-image.yml
+  pull_request:
     paths:
       - Dockerfile
       - .dockerignore
@@ -17,21 +27,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: docker-runtime-image-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  packages: write
-  id-token: write
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_OWNER: mikumin27
-  IMAGE_NAME: oscbot
-  DANSER_REPO: https://github.com/Wieku/danser-go.git
-  DANSER_COMMIT: 3eb75a34babb48590954deb836a585fe8174a1d5
-  GO_VERSION: "1.26"
+  IMAGE: ghcr.io/mikumin27/oscbot
 
 jobs:
   build-binary:
@@ -39,26 +42,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config libssl-dev build-essential mold
-
       - uses: dtolnay/rust-toolchain@stable
-
+      - uses: rui314/setup-mold@339e96b4ff1f3bd865856ba4cbbe8818a7acb038 # v1
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-${{ runner.os }}
-
-      - env:
-          RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_RELEASE_STRIP: "symbols"
-          CARGO_PROFILE_RELEASE_LTO: "thin"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-        run: cargo build --release --locked --bin oscbot
-
+          # PR and dependabot builds read main's cache but don't evict it with their own
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --release --locked --bin oscbot
+        env:
+          CARGO_PROFILE_RELEASE_STRIP: symbols
       - uses: actions/upload-artifact@v7
         with:
           name: oscbot-binary
@@ -66,77 +58,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  build-danser:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - id: cache
-        uses: actions/cache@v6
-        with:
-          path: danser-out
-          key: danser-${{ runner.os }}-${{ env.DANSER_COMMIT }}-danser-ffmpeg
-
-      - if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
-
-      - if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            git ca-certificates \
-            xorg-dev libgl1-mesa-dev libgtk-3-dev
-
-      # Compiles danser from the pinned commit, then fetches the ffmpeg
-      # danser is developed against (Wieku/FFmpeg-Builds via its own
-      # tools/ffmpeg) into danser-out/ffmpeg/{bin,lib}.
-      - if: steps.cache.outputs.cache-hit != 'true'
-        env:
-          DANSER_REPO: ${{ env.DANSER_REPO }}
-          DANSER_COMMIT: ${{ env.DANSER_COMMIT }}
-        run: |
-          set -euxo pipefail
-          mkdir -p src/danser
-          git init src/danser
-          git -C src/danser remote add origin "$DANSER_REPO"
-          git -C src/danser fetch --depth 1 origin "$DANSER_COMMIT"
-          git -C src/danser checkout -q FETCH_HEAD
-
-          export GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=gcc CXX=g++
-          BUILD_DIR="$PWD/danser-out"
-          mkdir -p "$BUILD_DIR"
-          cd src/danser
-
-          go run -buildvcs=false tools/assets/assets.go ./ "$BUILD_DIR/"
-          go build -buildvcs=false -trimpath \
-            -ldflags "-s -w -X 'github.com/wieku/danser-go/build.VERSION=dev-${DANSER_COMMIT}' -X 'github.com/wieku/danser-go/build.Stream=Release'" \
-            -buildmode=c-shared -o "$BUILD_DIR/danser-core.so" \
-            -tags "exclude_cimgui_glfw exclude_cimgui_sdli"
-          mv "$BUILD_DIR/danser-core.so" "$BUILD_DIR/libdanser-core.so"
-          cp libbass.so libbass_fx.so libbassmix.so libyuv.so libSDL3.so "$BUILD_DIR/"
-          gcc -no-pie -O3 -o "$BUILD_DIR/danser-cli" -I. cmain/main_danser.c -I"$BUILD_DIR/" -Wl,-rpath,'$ORIGIN' -L"$BUILD_DIR/" -ldanser-core
-          gcc -no-pie -O3 -D LAUNCHER -o "$BUILD_DIR/danser" -I. cmain/main_danser.c -I"$BUILD_DIR/" -Wl,-rpath,'$ORIGIN' -L"$BUILD_DIR/" -ldanser-core
-          strip "$BUILD_DIR/danser" "$BUILD_DIR/danser-cli" 2>/dev/null || true
-          rm -f "$BUILD_DIR/danser-core.h"
-          cd "$GITHUB_WORKSPACE"
-
-          (cd src/danser && go run tools/ffmpeg/ffmpeg.go "$BUILD_DIR/")
-
-          mkdir -p danser-out/{settings,Songs,Skins,Replays,videos}
-          chmod 755 danser-out/danser danser-out/danser-cli danser-out/ffmpeg/bin/* 2>/dev/null || true
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: danser-out
-          path: danser-out
-          if-no-files-found: error
-          retention-days: 1
-
   docker:
-    needs: [build-binary, build-danser]
+    needs: build-binary
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -151,51 +78,28 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: oscbot-binary
-          path: .
 
-      - uses: actions/download-artifact@v8
+      - uses: docker/setup-buildx-action@v4
+
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
         with:
-          name: danser-out
-          path: danser-out
-
-      - run: chmod +x oscbot
-
-      - id: buildx
-        uses: docker/setup-buildx-action@v4
-
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: vars
-        shell: bash
+      - id: tags
         env:
           REF_NAME: ${{ github.ref_name }}
-          REF_SHA: ${{ github.sha }}
         run: |
-          set -euo pipefail
-          SHA_SHORT="${REF_SHA::7}"
-          IMAGE_OWNER_LC="$(echo "${IMAGE_OWNER}" | tr '[:upper:]' '[:lower:]')"
-          IMAGE_NAME_LC="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
-          IMAGE_REPO="${REGISTRY}/${IMAGE_OWNER_LC}/${IMAGE_NAME_LC}"
-          BRANCH_TAG="$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
-          [ -z "$BRANCH_TAG" ] && BRANCH_TAG="branch"
-          if [ "$REF_NAME" = "main" ]; then
-            printf 'tags=%s:latest,%s:sha-%s\n' "$IMAGE_REPO" "$IMAGE_REPO" "$SHA_SHORT" >> "$GITHUB_OUTPUT"
-          else
-            printf 'tags=%s:%s,%s:%s-sha-%s\n' "$IMAGE_REPO" "$BRANCH_TAG" "$IMAGE_REPO" "$BRANCH_TAG" "$SHA_SHORT" >> "$GITHUB_OUTPUT"
-          fi
+          if [ "$REF_NAME" = main ]; then t=latest; else t=$(echo "$REF_NAME" | tr 'A-Z' 'a-z' | sed -E 's/[^a-z0-9_.-]+/-/g'); fi
+          echo "tags=$IMAGE:$t,$IMAGE:${t/latest/sha}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      # PRs build the image to prove it builds, main pushes it
       - uses: docker/build-push-action@v7
         with:
-          builder: ${{ steps.buildx.outputs.name }}
           context: .
-          file: Dockerfile
-          push: true
-          tags: ${{ steps.vars.outputs.tags }}
-          cache-from: type=gha,scope=runtime
-          cache-to: type=gha,mode=max,scope=runtime
-          sbom: true
-          provenance: true
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
