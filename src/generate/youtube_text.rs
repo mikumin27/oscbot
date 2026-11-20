@@ -49,7 +49,7 @@ pub fn generate_description(
     skin: Option<&OscWebSkin>,
 ) -> String {
     tracing::info!("Generating description");
-    let fmt = time::format_description::parse("[day].[month].[year] at [hour]:[minute]").unwrap();
+    let fmt = time::format_description::parse_borrowed::<1>("[day].[month].[year] at [hour]:[minute]").unwrap();
     let timestamp = match time_string {
         Some(timestamp) => timestamp,
         None => score.expect("Score must exist").ended_at.format(&fmt).unwrap()

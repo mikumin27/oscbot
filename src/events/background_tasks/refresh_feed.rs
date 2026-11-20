@@ -76,9 +76,9 @@ fn get_video_ids(xml: &str) -> Result<Vec<String>, Error> {
     let mut video_ids: Vec<String> = vec![];
     loop {
         match r.read_event_into(&mut b) {
-            Ok(Event::Start(e)) if e.name().as_ref().ends_with(b"videoId") => in_id = true,
-            Ok(Event::End(e))   if e.name().as_ref().ends_with(b"videoId") => in_id = false,
-            Ok(Event::Text(t))  if in_id => video_ids.push(t.decode()?.into_owned()),
+            Ok(Event::Start(e)) if e.name().as_ref().ends_with("videoId") => in_id = true,
+            Ok(Event::End(e))   if e.name().as_ref().ends_with("videoId") => in_id = false,
+            Ok(Event::Text(t))  if in_id => video_ids.push(t.xml10_content().into_owned()),
             Ok(Event::Eof) => break,
             Err(e) => return Err(e.into()),
             _ => {}
