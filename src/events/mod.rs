@@ -8,11 +8,10 @@ mod message_event;
 mod button_actions;
 
 pub fn handle_events<'a>(
-    ctx: &'a serenity::Context,
+    framework: FrameworkContext<'a, Data, Error>,
     event: &'a serenity::FullEvent,
-    _framework: &FrameworkContext<'a, Data, Error>,
-    _data: &Data
 ) -> poise::BoxFuture<'a, Result<(), Error>> {
+    let ctx = framework.serenity_context;
     Box::pin(async move {
         if let serenity::FullEvent::Message { new_message } = event {
             message_event::handle_message(&ctx, &new_message).await?;

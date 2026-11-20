@@ -154,7 +154,8 @@ docker compose up -d
 Important Docker notes:
 
 - Set `OSC_BOT_DANSER_PATH=/app/danser` and `OSC_BOT_DANSER_CLI=/app/danser/danser-cli` in your `.env`.
-- The container runs as `1000:1000` (see `docker-compose.yaml`). Make sure mounted folders are writable.
+- By default the container starts as root, chowns `/app` to `PUID:PGID` (default `1000:1000`) and drops to that user via gosu. Make sure mounted files are writable by it.
+- Non-root mode: set `user: "<uid>:<gid>"` instead of `PUID`/`PGID`. The container then never runs as root; `PUID`/`PGID` are ignored and nothing is chowned, so the mounted files (`app.db`, `token.json`, `youtube_secret.json`, `credentials.json`) must already be owned by that uid.
 
 ## Running locally (development)
 

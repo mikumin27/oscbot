@@ -101,7 +101,7 @@ pub async fn user_has_replay_role(ctx: impl CacheHttp, user: &serenity::User) ->
 }
 
 pub async fn global_check(ctx: Context<'_>) -> Result<bool, Error> {
-    tracing::info!(user = ctx.author().display_name(), command = ctx.command().qualified_name , "User called a command");
+    tracing::info!(user = ctx.author().display_name(), command = %ctx.command().qualified_name, "User called a command");
     let user_id = ctx.author().id;
     let is_blacklisted = user::Entity::find()
         .filter(user::Column::DiscordId.eq::<u64>(user_id.into()))

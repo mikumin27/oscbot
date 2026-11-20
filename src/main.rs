@@ -82,9 +82,7 @@ async fn main() {
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: commands::slash_commands_bundle(),
-            event_handler: |ctx, event, framework, data| {
-                events::handle_events(&ctx, &event, &framework, &data)
-            },
+            event_handler: events::handle_events,
             on_error: |error| {
                 Box::pin(discord_helper::handle_error(error))
             },

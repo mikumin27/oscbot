@@ -4,28 +4,28 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-poise = "0.6.1"
-tokio = {version = "1.52.3", features = ["macros", "rt-multi-thread", "process"]}
+poise = "0.7.1"
+tokio = {version = "1.54.1", features = ["macros", "rt-multi-thread", "process"]}
 rosu-v2 = {version = "0.11.0", features = ["cache", "macros", "replay"]}
 rosu-pp = "4.0.1"
-image = "0.25.9"
+image = "0.25.10"
 imageproc = "0.27.0"
-reqwest = { version = "0.13.4", features = ["blocking", "native-tls", "json"] }
+reqwest = { version = "0.13.5", features = ["blocking", "native-tls", "json"] }
 ab_glyph = "0.2.32"
-firebase-rs = "2.2.3"
-time = "0.3.47"
+firebase-rs = "2.2.5"
+time = "0.3.55"
 osu-db = "0.3.0"
-serde = "1.0.228"
-serde_json = "1.0.150"
-url = "2.5.7"
-futures-util = "0.3.32"
+serde = "1.0.229"
+serde_json = "1.0.154"
+url = "2.5.8"
+futures-util = "0.3.34"
 dotenvy = "0.15.7"
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.8.1", default-features = false, features = ["deflate"] }
 google-youtube3 = "7.0.0"
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
-quick-xml = "0.41.0"
-anyhow = "1.0.102"
-sea-orm = { version = "2.0.0-rc.40", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+quick-xml = "0.42.0"
+anyhow = "1.0.104"
+sea-orm = { version = "2.0.4", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros"] }
 rustls = { version = "0.23", features = ["ring"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "migrate"] }
