@@ -109,14 +109,17 @@ pub async fn upload(video_path: &String, title: String, description: String, thu
 
     tracing::info!("Setting thumbnail...");
     // set thumbnail
-    hub
+    // the video is already public at this point, so a rejected thumbnail must not fail the render
+    match hub
         .thumbnails()
         .set(&video_id)
         .add_scope(youtube::api::Scope::Upload)
         .upload(Cursor::new(thumbnail), thumb_mime)
-        .await?;
-
-    tracing::info!("Thumbnail has been set!");
+        .await
+    {
+        Ok(_) => tracing::info!("Thumbnail has been set!"),
+        Err(e) => tracing::warn!(video_id, error = %e, "Setting the thumbnail failed, keeping the upload"),
+    }
 
     Ok(video_id)
 }
