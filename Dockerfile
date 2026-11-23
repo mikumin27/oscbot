@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f AS danser
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS danser
 ADD --checksum=sha256:b3aa87e9cd2b8697d643c4834dd9b671682cb9800843733122e4dce1ad3794d0 \
     https://github.com/Wieku/danser-go/releases/download/0.12.1/danser-0.12.1-linux.zip /danser.zip
 RUN mkdir /danser && unzip -q /danser.zip -d /danser \
